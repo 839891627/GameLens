@@ -184,6 +184,29 @@ createApp({
                 return;
             }
 
+            // 等待视频索引加载完成
+            if (!videoIndex.value) {
+                console.log('[App] 等待视频索引加载...');
+                errorMessage.value = '正在加载视频索引，请稍候...';
+
+                // 等待最多10秒
+                const maxWait = 10000;
+                const checkInterval = 100;
+                let waited = 0;
+
+                while (!videoIndex.value && waited < maxWait) {
+                    await new Promise(resolve => setTimeout(resolve, checkInterval));
+                    waited += checkInterval;
+                }
+
+                if (!videoIndex.value) {
+                    errorMessage.value = '视频索引加载超时，请刷新页面重试';
+                    return;
+                }
+
+                errorMessage.value = '';
+            }
+
             isProcessing.value = true;
 
             try {
