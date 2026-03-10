@@ -989,9 +989,11 @@ body {
 }
 
 /* ==================== 响应式设计 ==================== */
+/* 平板尺寸 */
 @media (max-width: 1024px) {
     .header-container {
         flex-wrap: wrap;
+        gap: var(--space-md);
     }
 
     .header-stats {
@@ -1000,8 +1002,21 @@ body {
         justify-content: center;
     }
 
+    .header-stat {
+        flex: 1;
+    }
+
+    .main-container {
+        padding: 0 var(--space-md);
+    }
+
+    .actions-grid {
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    }
+
     .add-method {
         grid-template-columns: 1fr;
+        gap: var(--space-md);
     }
 
     .method-label {
@@ -1015,6 +1030,14 @@ body {
         margin-bottom: 0;
     }
 
+    .input-group {
+        flex-direction: column;
+    }
+
+    .text-input {
+        width: 100%;
+    }
+
     .video-item {
         flex-wrap: wrap;
     }
@@ -1024,47 +1047,555 @@ body {
     }
 }
 
+/* 手机尺寸 */
 @media (max-width: 768px) {
-    .main-container {
-        padding: 0 var(--space-md);
+    /* 全局优化 */
+    html {
+        font-size: 14px;
     }
 
+    body {
+        font-size: 0.9rem;
+    }
+
+    /* 头部导航 */
+    .header {
+        position: sticky;
+    }
+
+    .header-container {
+        padding: var(--space-sm) var(--space-md);
+        gap: var(--space-sm);
+    }
+
+    .header-brand {
+        gap: var(--space-sm);
+    }
+
+    .brand-logo {
+        width: 32px;
+        height: 32px;
+    }
+
+    .brand-logo svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    .brand-name {
+        font-size: 0.95rem;
+    }
+
+    .brand-version {
+        font-size: 0.65rem;
+    }
+
+    /* 统计数据 - 优化为水平滚动 */
+    .header-stats {
+        order: 2;
+        width: 100%;
+        justify-content: flex-start;
+        gap: var(--space-sm);
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: var(--space-xs) 0;
+    }
+
+    .header-stat {
+        flex-direction: row;
+        align-items: center;
+        gap: var(--space-xs);
+        padding: var(--space-xs) var(--space-sm);
+        background: var(--bg-tertiary);
+        border-radius: var(--radius-md);
+        min-width: fit-content;
+    }
+
+    .stat-label {
+        font-size: 0.65rem;
+    }
+
+    .stat-value {
+        font-size: 1rem;
+    }
+
+    /* 导航链接 */
+    .header-nav {
+        order: 3;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+    }
+
+    .nav-link {
+        width: 100%;
+        justify-content: center;
+        padding: var(--space-sm);
+    }
+
+    /* 主内容 */
+    .main {
+        padding: var(--space-md) 0;
+    }
+
+    .main-container {
+        padding: 0 var(--space-sm);
+    }
+
+    /* 操作卡片网格 */
     .actions-grid {
         grid-template-columns: 1fr;
+        gap: var(--space-md);
+        margin-bottom: var(--space-md);
     }
 
+    .action-card {
+        padding: var(--space-md);
+    }
+
+    .card-header {
+        margin-bottom: var(--space-md);
+    }
+
+    .card-icon {
+        width: 40px;
+        height: 40px;
+    }
+
+    .card-icon svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    .card-title {
+        font-size: 1rem;
+    }
+
+    /* 统计卡片 */
     .stat-grid {
-        flex-direction: column;
-        gap: var(--space-md);
+        padding: var(--space-sm) 0;
+    }
+
+    .stat-number {
+        font-size: 1.5rem;
+    }
+
+    .stat-desc {
+        font-size: 0.65rem;
     }
 
     .stat-divider {
-        display: none;
+        width: 1px;
+        height: 30px;
+    }
+
+    /* 按钮优化 */
+    .btn-primary,
+    .btn-secondary,
+    .btn-add,
+    .btn-bulk {
+        width: 100%;
+        padding: var(--space-sm);
+        font-size: 0.85rem;
+        min-height: 44px;
+    }
+
+    /* 内容区域 */
+    .content-section {
+        padding: var(--space-md);
+        margin-bottom: var(--space-md);
+        border-radius: var(--radius-lg);
     }
 
     .section-header {
         flex-direction: column;
         align-items: flex-start;
+        gap: var(--space-sm);
+        margin-bottom: var(--space-md);
     }
 
+    .section-title {
+        font-size: 1.1rem;
+    }
+
+    .section-title svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    .section-count {
+        min-width: 24px;
+        height: 24px;
+        font-size: 0.75rem;
+        padding: 0 var(--space-xs);
+    }
+
+    /* 添加视频方法 */
+    .add-methods {
+        gap: var(--space-md);
+    }
+
+    .add-method {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-sm);
+    }
+
+    .method-label {
+        flex-direction: row;
+        align-items: center;
+        gap: var(--space-sm);
+    }
+
+    .label-number {
+        font-size: 1.5rem;
+    }
+
+    .method-label h3 {
+        font-size: 0.95rem;
+    }
+
+    .input-group {
+        flex-direction: column;
+    }
+
+    .text-input,
+    .textarea-input {
+        font-size: 0.9rem;
+        padding: var(--space-sm);
+    }
+
+    .textarea-input {
+        rows: 3;
+        min-height: 80px;
+    }
+
+    /* 筛选按钮 */
+    .filter-group {
+        width: 100%;
+        padding: var(--space-xs);
+        gap: 0;
+    }
+
+    .filter-btn {
+        flex: 1;
+        padding: var(--space-xs) var(--space-sm);
+        font-size: 0.8rem;
+        min-height: 36px;
+    }
+
+    /* 视频列表 */
     .video-item {
         flex-direction: column;
-        align-items: flex-start;
+        align-items: stretch;
+        gap: var(--space-sm);
+        padding: var(--space-sm);
+        border-left-width: 2px;
+    }
+
+    .video-status {
+        align-self: flex-start;
+    }
+
+    .status-badge {
+        font-size: 0.7rem;
+        padding: 0.2rem var(--space-xs);
+    }
+
+    .video-url {
+        font-size: 0.8rem;
+        word-break: break-all;
+    }
+
+    .video-meta {
+        flex-direction: column;
+        gap: var(--space-xs);
+        font-size: 0.75rem;
     }
 
     .video-actions {
         width: 100%;
         justify-content: flex-end;
+        gap: var(--space-xs);
+        margin-top: var(--space-xs);
     }
 
-    .filter-group {
-        width: 100%;
-        justify-content: space-between;
+    .btn-icon-btn {
+        width: 40px;
+        height: 40px;
     }
 
-    .filter-btn {
-        flex: 1;
-        text-align: center;
+    .btn-icon-btn svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* 空状态 */
+    .empty-state {
+        padding: var(--space-lg) var(--space-md);
+    }
+
+    .empty-icon {
+        width: 60px;
+        height: 60px;
+    }
+
+    .empty-state h3 {
+        font-size: 1rem;
+    }
+
+    .empty-state p {
+        font-size: 0.85rem;
+    }
+
+    /* 分页 */
+    .pagination {
+        margin-top: var(--space-md);
+        gap: var(--space-sm);
+    }
+
+    .page-btn {
+        width: 40px;
+        height: 40px;
+    }
+
+    .page-info {
+        font-size: 0.85rem;
+    }
+
+    /* 日志面板 */
+    .logs-panel {
+        padding: var(--space-sm);
+        font-size: 0.75rem;
+        max-height: 300px;
+    }
+
+    .log-entry {
+        flex-direction: column;
+        gap: var(--space-xs);
+    }
+
+    /* 系统检查面板 */
+    .system-check-panel {
+        padding: var(--space-md);
+    }
+
+    .check-group {
+        margin-bottom: var(--space-md);
+    }
+
+    .check-group-title {
+        font-size: 0.85rem;
+        margin-bottom: var(--space-sm);
+    }
+
+    .check-item {
+        flex-wrap: wrap;
+        padding: var(--space-sm);
+        margin-bottom: var(--space-xs);
+    }
+
+    .check-label {
+        font-size: 0.85rem;
+        flex: 1 1 100%;
+    }
+
+    .check-value {
+        font-size: 0.75rem;
+        order: 2;
+        flex: 1 1 100%;
+        word-break: break-all;
+    }
+
+    .check-status {
+        font-size: 1rem;
+        order: 3;
+    }
+
+    .check-errors h4 {
+        font-size: 0.85rem;
+    }
+
+    .check-errors li {
+        font-size: 0.8rem;
+    }
+
+    /* 页脚 */
+    .footer {
+        padding: var(--space-md) 0;
+        margin-top: var(--space-md);
+    }
+
+    .footer p {
+        font-size: 0.8rem;
+    }
+}
+
+/* 小屏手机优化 */
+@media (max-width: 480px) {
+    :root {
+        --space-xs: 0.3rem;
+        --space-sm: 0.6rem;
+        --space-md: 0.8rem;
+        --space-lg: 1rem;
+        --space-xl: 1.5rem;
+    }
+
+    html {
+        font-size: 13px;
+    }
+
+    .header-container {
+        padding: var(--space-xs) var(--space-sm);
+    }
+
+    .brand-logo {
+        width: 28px;
+        height: 28px;
+    }
+
+    .brand-logo svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .brand-name {
+        font-size: 0.85rem;
+    }
+
+    .main-container {
+        padding: 0 var(--space-xs);
+    }
+
+    .action-card {
+        padding: var(--space-sm);
+    }
+
+    .card-icon {
+        width: 36px;
+        height: 36px;
+    }
+
+    .stat-number {
+        font-size: 1.25rem;
+    }
+
+    .section-title {
+        font-size: 1rem;
+    }
+
+    .text-input,
+    .textarea-input {
+        font-size: 0.85rem;
+    }
+
+    .video-url {
+        font-size: 0.75rem;
+        font-family: inherit;
+    }
+
+    .meta-value code {
+        font-size: 0.7rem;
+        padding: 1px 4px;
+    }
+
+    /* 优化触摸目标 */
+    .btn-icon-btn {
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        min-height: 36px;
+    }
+
+    /* 日志面板在极小屏幕上更紧凑 */
+    .logs-panel {
+        font-size: 0.7rem;
+        padding: var(--space-xs);
+    }
+
+    .log-time {
+        font-size: 0.65rem;
+    }
+}
+
+/* 触摸优化 */
+@media (hover: none) and (pointer: coarse) {
+    /* 增大所有可交互元素的触摸区域 */
+    .btn-primary,
+    .btn-secondary,
+    .btn-add,
+    .btn-bulk,
+    .filter-btn,
+    .page-btn,
+    .btn-icon-btn,
+    .nav-link {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    /* 按钮按下反馈 */
+    .btn-primary:active {
+        transform: scale(0.98);
+    }
+
+    .btn-secondary:active,
+    .btn-add:active,
+    .btn-bulk:active {
+        transform: scale(0.98);
+        background: var(--border-medium);
+    }
+
+    .filter-btn:active {
+        background: var(--bg-secondary);
+    }
+
+    .btn-icon-btn:active {
+        transform: scale(0.9);
+    }
+
+    .nav-link:active {
+        background: var(--bg-tertiary);
+    }
+
+    /* 优化滚动体验 */
+    .header-stats,
+    .video-list,
+    .logs-panel {
+        scroll-behavior: smooth;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* 移除悬停效果，只保留点击反馈 */
+    .action-card:hover,
+    .video-item:hover,
+    .nav-link:hover,
+    .filter-btn:hover {
+        transform: none;
+        box-shadow: none;
+    }
+}
+
+/* 横屏手机优化 */
+@media (max-width: 768px) and (orientation: landscape) {
+    .hero-section {
+        padding: var(--space-md) 0;
+    }
+
+    .actions-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: var(--space-sm);
+    }
+
+    .stat-grid {
+        flex-direction: row;
+    }
+
+    .stat-divider {
+        display: block;
+    }
+
+    .upload-zone {
+        padding: var(--space-md);
     }
 }
 
