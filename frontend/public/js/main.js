@@ -1,12 +1,11 @@
 /**
- * 帧探·GameLens - Vue 应用主逻辑
+ * 帧探·GameLens - Vue 应用主逻辑（优化版）
  */
 
 // 导入配置和工具函数
 import { CONFIG, formatTimestamp, formatSimilarity, getSimilarityColor } from './config.js';
-import { ImageMatcher } from './imageMatcher.js';
 
-const { createApp, ref, onMounted, computed } = Vue;
+const { createApp, ref, onMounted } = Vue;
 
 createApp({
     setup() {
@@ -16,7 +15,7 @@ createApp({
         const isModelLoading = ref(true);
         const isDragOver = ref(false);
         const results = ref([]);
-        const videoIndex = ref(null);
+        const videoList = ref([]);  // 改为只存储视频列表，不含帧数据
         const errorMessage = ref('');
         const fileInput = ref(null);
 
@@ -38,12 +37,13 @@ createApp({
          */
         onMounted(async () => {
             try {
-                // 初始化图像匹配器
-                await new ImageMatcher().init();
-                isModelLoading.value = false;
+                console.log('[App] 正在初始化...');
 
-                // 加载视频索引
-                await loadVideoIndex();
+                // 快速加载：只加载视频列表（不含帧数据）
+                await loadVideoList();
+
+                console.log('[App] ✓ 初始化完成');
+                isModelLoading.value = false;
             } catch (error) {
                 console.error('[App] 初始化失败:', error);
                 errorMessage.value = '初始化失败: ' + error.message;
@@ -52,13 +52,12 @@ createApp({
         });
 
         /**
-         * 加载视频索引
+         * 加载视频列表（轻量级，不含帧数据）
          */
-        async function loadVideoIndex() {
+        async function loadVideoList() {
             try {
-                console.log('[App] 正在加载视频索引...');
-                // 通过API获取完整视频索引（包含视频列表和帧数据）
-                const response = await fetch(`${CONFIG.api.baseURL}/videos/index`);
+                console.log('[App] 正在加载视频列表...');
+                const response = await fetch(`${CONFIG.api.baseURL}/videos`);
 
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -66,37 +65,15 @@ createApp({
 
                 const result = await response.json();
 
-                // 处理图片路径：将相对路径转换为后端服务器的完整 URL
-                const processedVideos = result.data.map(video => {
-                    if (video.frames) {
-                        video.frames = video.frames.map(frame => {
-                            // 原始路径格式: data/video_frames/BVXXX/frame_xxx.jpg
-                            // 需要转换为: http://localhost:8080/frames/BVXXX/frame_xxx.jpg
-                            if (frame.image_path) {
-                                // 去掉前缀 "data/video_frames/"
-                                const relativePath = frame.image_path.replace(/^data\/video_frames\//, '');
-                                // 拼接完整的后端 URL
-                                frame.image_path = `${CONFIG.backendBaseURL}/frames/${relativePath}`;
-                            }
-                            return frame;
-                        });
-                    }
-                    return video;
-                });
-
-                // 从API返回构建索引结构
-                videoIndex.value = {
-                    videos: processedVideos,
-                    total_videos: processedVideos.length,
-                    total_frames: processedVideos.reduce((sum, v) => sum + (v.frames?.length || 0), 0)
-                };
-
-                console.log('[App] ✓ 视频索引加载完成');
-                console.log(`[App]   - 视频数: ${videoIndex.value.total_videos}`);
-                console.log(`[App]   - 总帧数: ${videoIndex.value.total_frames}`);
+                if (result.success) {
+                    videoList.value = result.data;
+                    console.log(`[App] ✓ 视频列表加载完成，共 ${videoList.value.length} 个视频`);
+                } else {
+                    throw new Error(result.error || '加载视频列表失败');
+                }
             } catch (error) {
-                console.error('[App] 视频索引加载失败:', error);
-                throw new Error('视频索引加载失败，请确保后端服务正在运行');
+                console.error('[App] 视频列表加载失败:', error);
+                throw error;
             }
         }
 
@@ -152,52 +129,7 @@ createApp({
         }
 
         /**
-         * 根据关键词筛选视频帧
-         */
-        function filterVideosByKeyword(keyword) {
-            if (!keyword || !keyword.trim()) {
-                return videoIndex.value;
-            }
-
-            const searchTerm = keyword.toLowerCase().trim();
-            const filteredVideos = [];
-            const totalFrames = { original: 0, filtered: 0 };
-
-            for (const video of videoIndex.value.videos) {
-                // 检查视频标题是否包含关键词
-                const titleMatch = video.title.toLowerCase().includes(searchTerm);
-                const authorMatch = video.author.toLowerCase().includes(searchTerm);
-
-                if (titleMatch || authorMatch) {
-                    // 保留整个视频的所有帧
-                    filteredVideos.push({
-                        ...video,
-                        frames: video.frames
-                    });
-                    totalFrames.filtered += video.frames.length;
-                }
-                totalFrames.original += video.frames.length;
-            }
-
-            console.log(`[App] 关键词筛选: "${keyword}"`);
-            console.log(`[App]   - 原始帧数: ${totalFrames.original}`);
-            console.log(`[App]   - 筛选后帧数: ${totalFrames.filtered}`);
-
-            if (totalFrames.filtered === 0) {
-                errorMessage.value = `未找到与"${keyword}"相关的视频，请尝试其他关键词`;
-                return null;
-            }
-
-            // 返回筛选后的索引
-            return {
-                ...videoIndex.value,
-                videos: filteredVideos,
-                total_frames: totalFrames.filtered
-            };
-        }
-
-        /**
-         * 开始匹配流程（视觉匹配）
+         * 开始匹配流程（服务端匹配）
          */
         async function startMatching() {
             // 清除之前的错误和结果
@@ -209,42 +141,53 @@ createApp({
                 return;
             }
 
-            // 等待视频索引加载完成
-            if (!videoIndex.value) {
-                console.log('[App] 等待视频索引加载...');
-                errorMessage.value = '正在加载视频索引，请稍候...';
-
-                // 等待最多10秒
-                const maxWait = 10000;
-                const checkInterval = 100;
-                let waited = 0;
-
-                while (!videoIndex.value && waited < maxWait) {
-                    await new Promise(resolve => setTimeout(resolve, checkInterval));
-                    waited += checkInterval;
-                }
-
-                if (!videoIndex.value) {
-                    errorMessage.value = '视频索引加载超时，请刷新页面重试';
-                    return;
-                }
-
-                errorMessage.value = '';
-            }
-
             isProcessing.value = true;
 
             try {
-                // 视觉匹配（对所有视频）
-                const img = await loadImage(uploadedImage.value);
-                const matcher = new ImageMatcher();
-                const matchResults = await matcher.matchAsync(img, videoIndex.value);
+                console.log('[App] 正在上传图片进行匹配...');
 
-                if (matchResults.length === 0) {
-                    errorMessage.value = '未找到匹配的视频片段，请尝试更清晰的截图';
+                // 将图片转换为 Base64
+                const base64Image = await fileToBase64(uploadedImageFile.value);
+
+                // 发送到后端进行匹配
+                const response = await fetch(`${CONFIG.api.baseURL}/match`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        image: base64Image,
+                        max_results: CONFIG.matching.topK || 5
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+
+                if (result.success) {
+                    if (result.data.matches && result.data.matches.length > 0) {
+                        // 处理匹配结果，补充视频信息
+                        results.value = result.data.matches.map(match => {
+                            // 从 videoList 中查找视频信息
+                            const videoInfo = videoList.value.find(v => v.bvid === match.bvid);
+                            return {
+                                ...match,
+                                video: videoInfo || {
+                                    bvid: match.bvid,
+                                    title: '未知视频',
+                                    author: '未知UP主'
+                                }
+                            };
+                        });
+                        console.log(`[App] ✓ 匹配完成，找到 ${results.value.length} 个结果`);
+                    } else {
+                        errorMessage.value = '未找到匹配的视频片段，请尝试更清晰的截图';
+                    }
                 } else {
-                    results.value = matchResults;
-                    console.log(`[App] ✓ 匹配完成，找到 ${matchResults.length} 个结果`);
+                    throw new Error(result.error || '匹配失败');
                 }
             } catch (error) {
                 console.error('[App] 匹配失败:', error);
@@ -252,6 +195,22 @@ createApp({
             } finally {
                 isProcessing.value = false;
             }
+        }
+
+        /**
+         * 将文件转换为 Base64
+         */
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    // 移除 data:image/xxx;base64, 前缀
+                    const base64 = reader.result.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
         }
 
         /**
@@ -276,18 +235,6 @@ createApp({
             }
 
             return { valid: true };
-        }
-
-        /**
-         * 加载图片
-         */
-        function loadImage(src) {
-            return new Promise((resolve, reject) => {
-                const img = new Image();
-                img.onload = () => resolve(img);
-                img.onerror = () => reject(new Error('图片加载失败'));
-                img.src = src;
-            });
         }
 
         /**
@@ -329,6 +276,19 @@ createApp({
             window.open(url, '_blank');
         }
 
+        /**
+         * 获取完整的图片URL（指向后端服务器）
+         */
+        function getFullImageUrl(imagePath) {
+            if (!imagePath) return '';
+            // 如果已经是完整URL，直接返回
+            if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+                return imagePath;
+            }
+            // 拼接后端服务器地址
+            return `${CONFIG.backendBaseURL}${imagePath}`;
+        }
+
         // 返回模板需要的变量和方法
         return {
             uploadedImage,
@@ -352,7 +312,8 @@ createApp({
             currentVideoUrl,
             formatTimestamp,
             formatSimilarity,
-            getSimilarityColor
+            getSimilarityColor,
+            getFullImageUrl
         };
     }
 }).mount('#app');

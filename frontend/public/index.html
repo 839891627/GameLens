@@ -212,7 +212,7 @@
                             </div>
 
                             <div class="result-thumbnail">
-                                <img :src="result.frame.image_path" :alt="`匹配帧 ${index + 1}`">
+                                <img :src="getFullImageUrl(result.frame.image_path)" :alt="`匹配帧 ${index + 1}`">
                                 <div class="thumbnail-overlay">
                                     <span class="overlay-icon">▶</span>
                                 </div>
@@ -292,7 +292,7 @@
                     </div>
                 </section>
 
-                <!-- 模型加载状态 -->
+                <!-- 初始化加载状态 -->
                 <div v-if="isModelLoading" class="model-loading">
                     <div class="loading-animation">
                         <div class="loading-cube">
@@ -304,8 +304,8 @@
                             <div class="cube-face cube-bottom"></div>
                         </div>
                     </div>
-                    <p>正在加载 AI 模型...</p>
-                    <span class="loading-note">首次加载需要约 8 秒</span>
+                    <p>正在初始化系统...</p>
+                    <span class="loading-note">首次加载需要约 1 秒</span>
                 </div>
 
                 <!-- 错误提示 -->
@@ -341,10 +341,6 @@
             </div>
         </footer>
     </div>
-
-    <!-- TensorFlow.js 和 MobileNet -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@latest"></script>
 
     <!-- Vue 3 -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>

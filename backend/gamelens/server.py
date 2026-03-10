@@ -567,6 +567,161 @@ def get_parse_status_api():
     })
 
 
+@app.route('/api/match', methods=['POST'])
+def match_image_api():
+    """服务端图片匹配接口"""
+    # 在函数开始处导入所有需要的模块
+    import base64
+    import io
+    from PIL import Image
+    import numpy as np
+    from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+
+    try:
+        data = request.json
+        image_data = data.get('image', '')  # Base64 编码的图片
+        max_results = data.get('max_results', 5)
+
+        logger.info(f"收到匹配请求，图片数据长度: {len(image_data) if image_data else 0}")
+
+        if not image_data:
+            return jsonify({
+                'success': False,
+                'error': '请提供图片数据'
+            }), 400
+
+        # 检查视频索引是否存在
+        if not VIDEO_INDEX_FILE.exists():
+            logger.error("视频索引文件不存在")
+            return jsonify({
+                'success': False,
+                'error': '视频索引不存在，请先解析视频'
+            }), 404
+
+        # 解码 Base64 图片
+        try:
+            # 移除可能的数据 URL 前缀
+            if image_data.startswith('data:image'):
+                image_data = image_data.split(',')[1]
+
+            image_bytes = base64.b64decode(image_data)
+            logger.info(f"Base64 解码成功，图片大小: {len(image_bytes)} bytes")
+
+            image = Image.open(io.BytesIO(image_bytes))
+            logger.info(f"图片格式: {image.format}, 模式: {image.mode}, 尺寸: {image.size}")
+
+            # 转换为 RGB 格式
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+
+            # 调整图片大小（与 MobileNetV2 输入匹配）
+            image = image.resize((224, 224), Image.LANCZOS)
+
+            # 转换为 numpy 数组
+            img_array = np.array(image).astype(np.float32)
+
+            # 添加批次维度
+            img_array = np.expand_dims(img_array, axis=0)
+
+            # 使用 MobileNetV2 的预处理方法（归一化到 [-1, 1]）
+            img_array = preprocess_input(img_array)
+
+            logger.info(f"图片预处理完成，数组形状: {img_array.shape}")
+
+        except Exception as e:
+            logger.error(f"图片解码失败: {e}", exc_info=True)
+            return jsonify({
+                'success': False,
+                'error': f'图片解码失败: {str(e)}'
+            }), 400
+
+        # 加载视频索引（只在匹配时加载，可以缓存优化）
+        with open(VIDEO_INDEX_FILE, 'r', encoding='utf-8') as f:
+            video_index = json.load(f)
+
+        # 使用 TensorFlow MobileNetV2 进行特征提取
+        import tensorflow as tf
+        from tensorflow.keras.applications import MobileNetV2
+        from tensorflow.keras.preprocessing import image
+        from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+
+        # 加载 MobileNet V2 模型（可以缓存以提升性能）
+        if not hasattr(match_image_api, 'model'):
+            logger.info("加载 MobileNetV2 模型...")
+            from tensorflow.keras.applications import MobileNetV2
+            # 使用 MobileNetV2，alpha=1.0，输出 1280 维特征向量
+            match_image_api.model = MobileNetV2(
+                weights='imagenet',
+                include_top=False,
+                pooling='avg',
+                input_shape=(224, 224, 3)
+            )
+            logger.info("MobileNetV2 模型加载完成")
+
+        # 提取上传图片的特征
+        uploaded_feature = match_image_api.model.predict(img_array, verbose=0)
+        uploaded_feature = uploaded_feature.flatten()
+
+        # 遍历所有视频帧，计算相似度
+        matches = []
+
+        for video in video_index.get('videos', []):
+            for frame in video.get('frames', []):
+                # 从帧数据中获取特征向量
+                if 'feature' not in frame:
+                    continue
+
+                # 解码特征向量
+                frame_feature = np.array(frame['feature'], dtype=np.float32)
+
+                # 计算余弦相似度
+                similarity = np.dot(uploaded_feature, frame_feature) / (
+                    np.linalg.norm(uploaded_feature) * np.linalg.norm(frame_feature)
+                )
+
+                matches.append({
+                    'bvid': video['bvid'],
+                    'similarity': float(similarity),
+                    'frame': {
+                        'seconds': frame['seconds'],
+                        'image_path': frame.get('image_path', ''),
+                        'feature': frame.get('feature', [])
+                    }
+                })
+
+        # 按相似度排序，取前 N 个结果
+        matches.sort(key=lambda x: x['similarity'], reverse=True)
+        top_matches = matches[:max_results]
+
+        # 处理图片路径
+        for match in top_matches:
+            if match['frame']['image_path']:
+                relative_path = match['frame']['image_path'].replace('data/video_frames/', '')
+                match['frame']['image_path'] = f"/frames/{relative_path}"
+
+        logger.info(f"匹配完成，返回 {len(top_matches)} 个结果")
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'matches': top_matches
+            }
+        })
+
+    except ImportError as e:
+        logger.error(f"缺少必要的依赖: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'服务端缺少必要依赖: {str(e)}'
+        }), 500
+    except Exception as e:
+        logger.error(f"图片匹配失败: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/system/check', methods=['GET'])
 def check_system_api():
     """检查系统环境和依赖"""
