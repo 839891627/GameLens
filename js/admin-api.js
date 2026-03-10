@@ -290,6 +290,7 @@ createApp({
             paginatedVideos,
             filteredVideos,
             stats,
+            videoStats: stats,  // 别名，保持与模板一致
             bulkCount,
             isParsing,
             parseLogs,
