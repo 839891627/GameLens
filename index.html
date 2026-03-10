@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>帧探·GameLens - 手游攻略智能匹配</title>
+    <meta name="description" content="上传游戏截图，智能匹配攻略视频并精准跳转">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 视频播放器弹窗 -->
+        <div v-if="showVideoPlayer" class="video-modal" @click.self="closeVideoPlayer">
+            <div class="video-modal-content">
+                <div class="video-modal-header">
+                    <h3>观看攻略视频</h3>
+                    <button @click="closeVideoPlayer" class="close-modal-btn">✕</button>
+                </div>
+                <div class="video-player-wrapper">
+                    <iframe
+                        :src="currentVideoUrl"
+                        class="video-player"
+                        scrolling="no"
+                        border="0"
+                        frameborder="no"
+                        framespacing="0"
+                        allowfullscreen="true"
+                        allow="autoplay; fullscreen">
+                    </iframe>
+                </div>
+                <div class="video-modal-footer">
+                    <button @click="openExternalPlayer" class="external-player-btn">
+                        🔗 在B站打开
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- 头部 -->
+        <header class="header">
+            <div class="container">
+                <h1 class="logo">
+                    <span class="logo-icon">🎮</span>
+                    帧探·GameLens
+                </h1>
+                <p class="tagline">一图即搜，秒懂攻略</p>
+                <a href="admin.html" class="admin-link" title="视频管理后台">
+                    <span>⚙️</span> 管理后台
+                </a>
+            </div>
+        </header>
+
+        <!-- 主内容区 -->
+        <main class="main">
+            <div class="container">
+                <!-- 关键词输入区域（功能预留，暂未开放） -->
+                <section class="keyword-section">
+                    <div class="keyword-input-wrapper" style="opacity: 0.6;">
+                        <div class="keyword-icon">🔍</div>
+                        <input
+                            type="text"
+                            class="keyword-input"
+                            placeholder="关键词筛选功能开发中..."
+                            disabled
+                        >
+                        <button
+                            class="search-btn"
+                            disabled
+                        >
+                            筛选
+                        </button>
+                    </div>
+                    <div class="keyword-examples">
+                        <span class="example-label">即将支持：按关卡名、BOSS名、任务关键词筛选</span>
+                    </div>
+                </section>
+
+                <!-- 上传区域 -->
+                <section class="upload-section" :class="{ 'has-image': uploadedImage }">
+                    <div
+                        v-if="!uploadedImage"
+                        class="upload-zone"
+                        :class="{ 'drag-over': isDragOver }"
+                        @dragover.prevent="isDragOver = true"
+                        @dragleave.prevent="isDragOver = false"
+                        @drop.prevent="handleDrop"
+                        @click="triggerFileInput"
+                    >
+                        <div class="upload-icon">📸</div>
+                        <h2 class="upload-title">上传游戏截图</h2>
+                        <p class="upload-hint">拖拽图片到这里，或点击选择文件</p>
+                        <p class="upload-formats">支持 JPG、PNG、WebP 格式，最大10MB</p>
+                        <input
+                            ref="fileInput"
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            @change="handleFileSelect"
+                            style="display: none"
+                        >
+                    </div>
+
+                    <!-- 图片预览 -->
+                    <div v-else class="preview-container">
+                        <div class="preview-image-wrapper">
+                            <img :src="uploadedImage" alt="上传的游戏截图" class="preview-image">
+                            <button @click="clearImage" class="clear-btn" title="清除图片">✕</button>
+                        </div>
+
+                        <!-- 处理状态 -->
+                        <div v-if="isProcessing" class="processing-status">
+                            <div class="spinner"></div>
+                            <p>正在分析图片...</p>
+                        </div>
+
+                        <!-- 重新匹配按钮 -->
+                        <button
+                            v-if="!isProcessing && results.length > 0"
+                            @click="triggerFileInput"
+                            class="retry-btn"
+                        >
+                            更换图片
+                        </button>
+                    </div>
+                </section>
+
+                <!-- 结果展示区域 -->
+                <section v-if="results.length > 0" class="results-section">
+                    <h2 class="results-title">匹配结果</h2>
+
+                    <div class="results-list">
+                        <div
+                            v-for="(result, index) in results"
+                            :key="index"
+                            class="result-card"
+                            :style="{ borderLeftColor: getSimilarityColor(result.similarity) }"
+                        >
+                            <div class="result-header">
+                                <span class="result-rank">{{ index + 1 }}</span>
+                                <span class="result-similarity" :style="{ color: getSimilarityColor(result.similarity) }">
+                                    {{ formatSimilarity(result.similarity) }}
+                                </span>
+                            </div>
+
+                            <div class="result-content">
+                                <div class="result-thumbnail">
+                                    <img :src="result.frame.image_path" :alt="`匹配帧 ${index + 1}`">
+                                </div>
+
+                                <div class="result-info">
+                                    <h3 class="result-video-title">{{ result.video.title }}</h3>
+                                    <p class="result-author">UP主: {{ result.video.author }}</p>
+
+                                    <div class="result-time">
+                                        <span class="time-icon">⏱️</span>
+                                        <span class="time-text">{{ formatTimestamp(result.frame.seconds) }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="result-actions">
+                                <button
+                                    @click="jumpToVideo(result.video.bvid, result.frame.seconds)"
+                                    class="watch-btn"
+                                >
+                                    <span class="btn-icon">▶️</span>
+                                    跳转观看
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 空状态/提示 -->
+                <section v-else-if="!uploadedImage && !isModelLoading" class="tips-section">
+                    <h2 class="tips-title">使用指南</h2>
+                    <div class="tips-grid">
+                        <div class="tip-card">
+                            <div class="tip-number">1</div>
+                            <h3>输入关键词（可选）</h3>
+                            <p>在上方输入关卡名称或任务关键词，可大幅提升匹配精度</p>
+                        </div>
+                        <div class="tip-card">
+                            <div class="tip-number">2</div>
+                            <h3>上传游戏截图</h3>
+                            <p>截取当前游戏画面并上传</p>
+                        </div>
+                        <div class="tip-card">
+                            <div class="tip-number">3</div>
+                            <h3>查看匹配结果</h3>
+                            <p>系统智能匹配并精准跳转到攻略视频</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 模型加载状态 -->
+                <div v-if="isModelLoading" class="model-loading">
+                    <div class="spinner large"></div>
+                    <p>正在加载AI模型，首次加载需要约8秒...</p>
+                </div>
+
+                <!-- 错误提示 -->
+                <div v-if="errorMessage" class="error-message">
+                    <span class="error-icon">⚠️</span>
+                    {{ errorMessage }}
+                    <button @click="errorMessage = ''" class="error-close">✕</button>
+                </div>
+            </div>
+        </main>
+
+        <!-- 页脚 -->
+        <footer class="footer">
+            <div class="container">
+                <p>帧探·GameLens - 基于图像相似度的手游攻略智能匹配工具</p>
+                <p class="footer-note">当前支持游戏：波斯王子：失落的王冠 | 更多游戏开发中...</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- TensorFlow.js 和 MobileNet -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@latest"></script>
+
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+    <!-- 应用代码 (使用ES6模块) -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
