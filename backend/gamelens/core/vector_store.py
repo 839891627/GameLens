@@ -262,17 +262,37 @@ class VectorStore:
     def distance_to_similarity(self, distance: float) -> float:
         """将 L2 距离转换为相似度分数
 
+        对于高维向量（1280维），L2 距离通常在 0-450 范围内。
+        使用归一化方法将距离转换为 0-1 的相似度分数。
+
         Args:
             distance: L2 距离
 
         Returns:
             相似度分数 (0-1)，1 为完全相同
         """
-        return 1 / (1 + distance)
+        # 对于 1280 维 MobileNetV2 特征，典型距离范围是 0-450
+        # 使用线性归一化映射到 0-1
+        min_distance = 0    # 完全相同
+        max_distance = 450  # 最大距离阈值
+
+        # 确保在合理范围内
+        distance_clamped = max(min_distance, min(distance, max_distance))
+
+        # 线性归一化：距离越小，相似度越高
+        similarity = 1 - (distance_clamped - min_distance) / (max_distance - min_distance)
+
+        return float(similarity)
 
     def distances_to_similarities(self, distances: np.ndarray) -> np.ndarray:
         """批量转换距离为相似度"""
-        return 1 / (1 + distances)
+        min_distance = 0
+        max_distance = 450
+
+        distances_clamped = np.clip(distances, min_distance, max_distance)
+        similarities = 1 - (distances_clamped - min_distance) / (max_distance - min_distance)
+
+        return similarities
 
 
 # ==================== 便捷函数 ====================

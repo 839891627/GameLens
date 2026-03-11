@@ -602,9 +602,9 @@ def match_image_api():
     """服务端图片匹配接口 - FAISS + SQLite 版本"""
     import base64
     import io
-    from PIL import Image
     import numpy as np
     from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+    from tensorflow.keras.preprocessing import image as keras_image
 
     try:
         data = request.json
@@ -636,24 +636,18 @@ def match_image_api():
             image_bytes = base64.b64decode(image_data)
             logger.info(f"Base64 解码成功，图片大小: {len(image_bytes)} bytes")
 
-            image = Image.open(io.BytesIO(image_bytes))
-            logger.info(f"图片格式: {image.format}, 模式: {image.mode}, 尺寸: {image.size}")
+            # 使用与索引构建时完全相同的方式处理图片
+            from tensorflow.keras.preprocessing import image as keras_image
 
-            # 转换为 RGB 格式
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
+            image = keras_image.img_to_array(
+                keras_image.load_img(io.BytesIO(image_bytes), target_size=(224, 224))
+            )
 
-            # 调整图片大小（与 MobileNetV2 输入匹配）
-            image = image.resize((224, 224), Image.LANCZOS)
-
-            # 转换为 numpy 数组
-            img_array = np.array(image).astype(np.float32)
+            # 预处理（MobileNetV2 的预处理方式）
+            img_array = preprocess_input(image)
 
             # 添加批次维度
             img_array = np.expand_dims(img_array, axis=0)
-
-            # 使用 MobileNetV2 的预处理方法（归一化到 [-1, 1]）
-            img_array = preprocess_input(img_array)
 
             logger.info(f"图片预处理完成，数组形状: {img_array.shape}")
 
@@ -699,13 +693,24 @@ def match_image_api():
                 if frame_id < 0:  # FAISS 返回 -1 表示无效结果
                     continue
 
+                # ⚠️ 重要：FAISS 索引位置从 0 开始，数据库 ID 从 1 开始
+                # 迁移时在位置 0 添加了占位向量，所以：
+                # FAISS 位置 0 → 占位向量（跳过）
+                # FAISS 位置 n → 数据库 ID n
+                # 但为了保险，我们搜索时跳过位置 0
+                if frame_id == 0:
+                    continue
+
+                # FAISS 索引位置 = 数据库 ID（因为位置 0 是占位符）
+                db_frame_id = int(frame_id)
+
                 # 查询帧信息
                 frame = conn.execute(
                     """SELECT f.*, v.title, v.author, v.url, v.bvid as video_bvid
                        FROM frames f
                        JOIN videos v ON f.video_id = v.id
                        WHERE f.id = ?""",
-                    (int(frame_id),)
+                    (db_frame_id,)
                 ).fetchone()
 
                 if frame:
