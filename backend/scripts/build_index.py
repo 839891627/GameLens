@@ -131,7 +131,12 @@ class VideoDownloader:
             logger.info(f"视频文件已存在，跳过下载: {video_id}")
             # 仍然需要获取视频元数据
             try:
-                with yt_dlp.YoutubeDL({'quiet': True, 'noplaylist': True}) as ydl:
+                with yt_dlp.YoutubeDL({
+                    'quiet': True,
+                    'noplaylist': True,
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'referer': 'https://www.bilibili.com/'
+                }) as ydl:
                     info = ydl.extract_info(url, download=False)
                     return {
                         'bvid': video_id,  # 使用包含分P的标识符
@@ -160,6 +165,14 @@ class VideoDownloader:
             'nooverwrites': True,
             # 不下载播放列表（合集/分P），只下载单个视频
             'noplaylist': True,
+            # 添加User-Agent绕过反爬虫
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            # 添加Referer
+            'referer': 'https://www.bilibili.com/',
+            # 使用cookies（可选）
+            'cookies': '',
+            # 禁用SSL验证（如果需要）
+            'nocheckcertificate': False,
         }
 
         logger.info(f"正在下载: {url} (标识符: {video_id})")
