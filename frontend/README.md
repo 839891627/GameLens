@@ -34,7 +34,7 @@ cd backend
 python -m gamelens
 ```
 
-API 地址：http://localhost:5000/api
+API 地址：http://localhost:8080/api
 
 ## 生产部署
 
@@ -53,14 +53,14 @@ server {
 
     # 后端 API 代理
     location /api {
-        proxy_pass http://localhost:5000;
+        proxy_pass http://localhost:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
 
     # 视频索引文件代理
     location /data {
-        proxy_pass http://localhost:5000;
+        proxy_pass http://localhost:8080;
     }
 }
 ```
@@ -97,7 +97,7 @@ vercel --prod
 
 ```javascript
 // 开发环境
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'http://localhost:8080/api';
 
 // 生产环境（通过 Nginx 代理）
 const API_BASE = '/api';

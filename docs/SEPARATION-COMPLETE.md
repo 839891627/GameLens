@@ -39,7 +39,7 @@ gamelens/
 
 启动后访问：
 - **前端**: http://localhost:8000
-- **后端 API**: http://localhost:5000/api
+- **后端 API**: http://localhost:8080/api
 
 ### 方式2：分别启动
 
@@ -92,7 +92,7 @@ python -m http.server 8000 --directory public
 1. **API 配置**
    ```javascript
    // src/js/config.js
-   const API_BASE = 'http://localhost:5000/api';  // 开发
+   const API_BASE = 'http://localhost:8080/api';  // 开发
    // const API_BASE = '/api';  // 生产（通过 Nginx 代理）
    ```
 
@@ -122,7 +122,7 @@ server {
 
     # 后端 API 代理
     location /api {
-        proxy_pass http://localhost:5000;
+        proxy_pass http://localhost:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
@@ -135,7 +135,7 @@ server {
 # 后端
 cd backend
 docker build -t gamelens-backend .
-docker run -d -p 5000:5000 gamelens-backend
+docker run -d -p 8080:8080 gamelens-backend
 
 # 前端
 cd frontend
@@ -164,7 +164,7 @@ docker run -d -p 80:80 gamelens-frontend
 
 3. **访问应用**
    - 前端：http://localhost:8000
-   - API：http://localhost:5000/api
+   - API：http://localhost:8080/api
 
 ### 修改 API 配置
 
@@ -172,7 +172,7 @@ docker run -d -p 80:80 gamelens-frontend
 
 ```javascript
 // 开发环境
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'http://localhost:8080/api';
 
 // 生产环境（取消注释）
 // const API_BASE = '/api';

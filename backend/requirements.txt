@@ -1,0 +1,28 @@
+# 帧探·GameLens - 后端依赖列表
+
+# Web 框架
+Flask>=3.0.0
+flask-cors>=4.0.0
+
+# 深度学习和图像处理
+tensorflow>=2.13.0
+opencv-python>=4.8.0
+Pillow>=10.0.0
+
+# 视频下载
+yt-dlp>=2023.10.0
+
+# 数据处理
+numpy>=1.24.0
+
+# 向量搜索（新增）
+faiss-cpu>=1.7.4
+# 如果有 GPU，使用 faiss-gpu 替代 faiss-cpu:
+# faiss-gpu>=1.7.4
+
+# 工具库
+tqdm>=4.66.0
+python-dotenv>=1.0.0
+
+# 可选：性能监控
+# psutil>=5.9.0

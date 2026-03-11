@@ -28,8 +28,8 @@ python -m gamelens
 ## 访问
 
 打开浏览器：
-- **主页**: http://localhost:5000
-- **管理后台**: http://localhost:5000/admin.html
+- **主页**: http://localhost:8080
+- **管理后台**: http://localhost:8080/admin.html
 
 ## 使用
 

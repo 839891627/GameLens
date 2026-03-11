@@ -2,13 +2,13 @@
 
 ## 📡 正确的端口分配
 
-### 后端 API - 端口 5000
+### 后端 API - 端口 8080
 **用途**: 纯 API 服务，不提供 HTML 页面
 
 ```
-http://localhost:5000/api/videos          # 视频列表 API
-http://localhost:5000/api/parse/start     # 启动解析 API
-http://localhost:5000/api/system/check    # 系统检查 API
+http://localhost:8080/api/videos          # 视频列表 API
+http://localhost:8080/api/parse/start     # 启动解析 API
+http://localhost:8080/api/system/check    # 系统检查 API
 ```
 
 ### 前端服务 - 端口 8000
@@ -47,10 +47,10 @@ python -m http.server 8000 --directory public
 
 ## ⚠️ 常见错误
 
-### ❌ 错误：直接访问 5000 端口看页面
+### ❌ 错误：直接访问 8080 端口看页面
 ```
-http://localhost:5000/           # 404 Not Found
-http://localhost:5000/admin.html # 404 Not Found
+http://localhost:8080/           # 404 Not Found
+http://localhost:8080/admin.html # 404 Not Found
 ```
 
 ### ✅ 正确：访问 8000 端口看页面
@@ -67,7 +67,7 @@ http://localhost:8000/admin.html # 管理后台 ✅
 
 ```javascript
 // 前端配置（frontend/src/js/config.js）
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'http://localhost:8080/api';
 
 // API 调用示例
 fetch(`${API_BASE}/videos`)
@@ -88,7 +88,7 @@ http://localhost:8000         ← 前端静态文件服务器
     ↓
 JavaScript 通过 API 调用后端
     ↓
-http://localhost:5000/api    ← 后端 API 服务器
+http://localhost:8080/api    ← 后端 API 服务器
 ```
 
 ---
@@ -97,7 +97,7 @@ http://localhost:5000/api    ← 后端 API 服务器
 
 ### 检查后端是否运行
 ```bash
-curl http://localhost:5000/api/health
+curl http://localhost:8080/api/health
 ```
 
 应该返回：
@@ -114,4 +114,4 @@ curl http://localhost:8000/
 
 ---
 
-**总结：5000 只给 API 用，看页面要去 8000！** ✅
+**总结：8080 只给 API 用，看页面要去 8000！** ✅

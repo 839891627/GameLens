@@ -99,7 +99,7 @@ python server.py
 ### 管理项目
 ```bash
 # 添加视频
-# 访问 http://localhost:5000/admin.html
+# 访问 http://localhost:8080/admin.html
 
 # 系统检查
 # 点击"系统检查"按钮

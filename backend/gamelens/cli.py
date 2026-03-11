@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import __version__, __description__
 from .utils.env import check_environment
-from .server import app
+from .api.server import app
 
 
 def print_banner():

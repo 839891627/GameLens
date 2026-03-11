@@ -56,7 +56,7 @@ gamelens/
 ```
 
 这会自动启动：
-- 后端 API 服务（端口 5000）
+- 后端 API 服务（端口 8080）
 - 前端静态服务器（端口 8000）
 
 ### 分别启动
@@ -77,7 +77,7 @@ python -m http.server 8000 --directory public
 
 - **主页**: http://localhost:8000
 - **管理后台**: http://localhost:8000/admin.html
-- **API 文档**: http://localhost:5000/api
+- **API 文档**: http://localhost:8080/api
 
 ---
 
@@ -132,7 +132,7 @@ server {
 
     # 后端 API
     location /api {
-        proxy_pass http://localhost:5000;
+        proxy_pass http://localhost:8080;
     }
 }
 ```

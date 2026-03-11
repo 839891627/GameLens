@@ -150,7 +150,7 @@ def get_videos():
 **frontend/src/js/config.js**
 ```javascript
 // 开发环境
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'http://localhost:8080/api';
 
 // 生产环境（根据部署方式调整）
 // const API_BASE = '/api';  // 同域名
@@ -175,7 +175,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "5000:5000"
+      - "8080:8080"
     volumes:
       - ./backend/data:/app/data
     environment:
@@ -202,7 +202,7 @@ services:
 ```bash
 cd backend
 python -m gamelens
-# 运行在 http://localhost:5000
+# 运行在 http://localhost:8080
 ```
 
 **前端：**
