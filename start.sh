@@ -7,6 +7,23 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Python 检测（支持环境变量覆盖）
+PYTHON_CMD="${PYTHON_CMD:-}"
+if [ -z "$PYTHON_CMD" ]; then
+    # 自动检测：优先使用 python3.12，然后是 python3，最后是 python
+    if command -v python3.12 &> /dev/null; then
+        PYTHON_CMD="python3.12"
+    elif command -v python3 &> /dev/null; then
+        PYTHON_CMD="python3"
+    elif command -v python &> /dev/null; then
+        PYTHON_CMD="python"
+    else
+        echo -e "${RED}错误: 未找到 Python 解释器${NC}"
+        echo "请设置环境变量 PYTHON_CMD，例如: PYTHON_CMD=/usr/local/bin/python3.12 ./start.sh"
+        exit 1
+    fi
+fi
+
 # 检查端口占用
 check_port() {
     local port=$1
@@ -51,14 +68,14 @@ case $choice in
 
         echo ""
         echo "启动后端..."
-        cd backend && python -m gamelens &
+        cd backend && $PYTHON_CMD -m gamelens &
         BACKEND_PID=$!
 
         sleep 2
 
         echo ""
         echo "启动前端..."
-        cd frontend && python -m http.server 8000 --directory public &
+        cd frontend && $PYTHON_CMD -m http.server 8000 --directory public &
         FRONTEND_PID=$!
 
         echo ""
@@ -79,7 +96,7 @@ case $choice in
         echo ""
         echo "启动后端..."
         cd backend
-        python -m gamelens
+        $PYTHON_CMD -m gamelens
         ;;
     3)
         echo ""
@@ -89,7 +106,7 @@ case $choice in
         echo ""
         echo "启动前端..."
         cd frontend
-        python -m http.server 8000 --directory public
+        $PYTHON_CMD -m http.server 8000 --directory public
         ;;
     4)
         echo ""
