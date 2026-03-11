@@ -40,6 +40,7 @@ VIDEO_LIST_FILE = DATA_DIR / "videos.txt"
 BUILD_SCRIPT = PROJECT_ROOT / "scripts" / "build_index.py"
 VIDEO_FRAMES_DIR = DATA_DIR / "video_frames"
 DATABASE_FILE = DB_PATH
+LOG_FILE = DATA_DIR / "parse.log"  # 解析日志文件
 
 # ==================== Flask 应用 ====================
 # 纯 API 服务器，不托管静态文件（前后端分离）
@@ -121,15 +122,26 @@ def save_videos(videos: List[Dict[str, Any]]):
 
 
 def add_log(message: str, log_type: str = 'info'):
-    """添加解析日志"""
-    parse_status['logs'].append({
+    """添加解析日志（同时保存到文件）"""
+    log_entry = {
         'time': datetime.now().strftime('%H:%M:%S'),
         'message': message,
         'type': log_type
-    })
+    }
+    parse_status['logs'].append(log_entry)
+
     # 只保留最近100条
     if len(parse_status['logs']) > 100:
         parse_status['logs'] = parse_status['logs'][-100:]
+
+    # 写入日志文件
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(LOG_FILE, 'a', encoding='utf-8') as f:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            f.write(f"[{timestamp}] [{log_type.upper()}] {message}\n")
+    except Exception as e:
+        logger.error(f"写入日志文件失败: {e}")
 
 
 # ==================== 解析线程 ====================
@@ -194,36 +206,37 @@ def run_parse_script():
         add_log(f'执行解析脚本: {BUILD_SCRIPT}', 'info')
         logger.info(f"工作目录: {PROJECT_ROOT}")
 
-        result = subprocess.run(
+        # 使用 PPIPE 实时捕获输出
+        process = subprocess.Popen(
             ['python', str(BUILD_SCRIPT)],
             cwd=str(PROJECT_ROOT),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # 将 stderr 合并到 stdout
             text=True,
-            timeout=3600  # 1小时超时
+            bufsize=1,  # 行缓冲
+            universal_newlines=True
         )
 
-        # 记录输出
-        if result.stdout:
-            for line in result.stdout.split('\n'):
-                if line.strip():
-                    add_log(line.strip(), 'info')
+        # 实时读取输出
+        try:
+            for line in process.stdout:
+                line = line.strip()
+                if line:
+                    add_log(line, 'info')
+                    logger.info(f"[解析脚本] {line}")
 
-        if result.stderr:
-            for line in result.stderr.split('\n'):
-                if line.strip():
-                    logger.warning(f"解析脚本错误: {line.strip()}")
-                    # 只记录重要错误到前端
-                    if 'Error' in line or 'error' in line or '失败' in line or '错误' in line:
-                        add_log(f'错误: {line.strip()}', 'error')
+        except Exception as e:
+            add_log(f'✗ 读取输出时出错: {str(e)}', 'error')
+            logger.error(f"读取输出时出错: {e}")
 
-        if result.returncode == 0:
+        # 等待进程结束
+        returncode = process.wait()
+
+        if returncode == 0:
             add_log('✓ 解析完成！', 'success')
         else:
-            add_log(f'✗ 解析失败 (退出码: {result.returncode})', 'error')
-            add_log('请检查服务器日志获取详细错误信息', 'error')
+            add_log(f'✗ 解析失败 (退出码: {returncode})', 'error')
 
-    except subprocess.TimeoutExpired:
-        add_log('✗ 解析超时（超过1小时）', 'error')
     except Exception as e:
         add_log(f'✗ 解析出错: {str(e)}', 'error')
         logger.error(f"解析出错: {e}", exc_info=True)
@@ -601,6 +614,35 @@ def get_parse_status_api():
     })
 
 
+@app.route('/api/parse/logs', methods=['GET'])
+def get_parse_logs_api():
+    """获取完整的解析日志文件内容"""
+    try:
+        if not LOG_FILE.exists():
+            return jsonify({
+                'success': True,
+                'data': {
+                    'logs': '日志文件不存在'
+                }
+            })
+
+        with open(LOG_FILE, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'logs': content,
+                'file_path': str(LOG_FILE)
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/match', methods=['POST'])
 def match_image_api():
     """服务端图片匹配接口 - FAISS + SQLite 版本"""
@@ -693,20 +735,13 @@ def match_image_api():
         # SQLite 查询元数据
         results = []
         with get_db() as conn:
-            for frame_id, distance in zip(frame_ids, distances):
-                if frame_id < 0:  # FAISS 返回 -1 表示无效结果
+            for faiss_idx, distance in zip(frame_ids, distances):
+                if faiss_idx < 0:  # FAISS 返回 -1 表示无效结果
                     continue
 
                 # ⚠️ 重要：FAISS 索引位置从 0 开始，数据库 ID 从 1 开始
-                # 迁移时在位置 0 添加了占位向量，所以：
-                # FAISS 位置 0 → 占位向量（跳过）
-                # FAISS 位置 n → 数据库 ID n
-                # 但为了保险，我们搜索时跳过位置 0
-                if frame_id == 0:
-                    continue
-
-                # FAISS 索引位置 = 数据库 ID（因为位置 0 是占位符）
-                db_frame_id = int(frame_id)
+                # 数据库 ID = FAISS 索引位置 + 1
+                db_frame_id = int(faiss_idx) + 1
 
                 # 查询帧信息
                 frame = conn.execute(
@@ -754,69 +789,6 @@ def match_image_api():
         }), 500
     except Exception as e:
         logger.error(f"图片匹配失败: {e}", exc_info=True)
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/index/rebuild', methods=['POST'])
-def rebuild_index_api():
-    """重建视频索引（删除现有索引后重新构建）"""
-    global parse_status
-
-    if parse_status['is_parsing']:
-        return jsonify({
-            'success': False,
-            'error': '已有任务正在进行中'
-        }), 400
-
-    try:
-        # 删除现有数据库文件
-        if DATABASE_FILE.exists():
-            DATABASE_FILE.unlink()
-            add_log('已删除数据库文件', 'info')
-            logger.info(f"已删除数据库文件: {DATABASE_FILE}")
-        else:
-            add_log('数据库文件不存在，跳过删除', 'info')
-
-        # 删除 FAISS 索引文件
-        faiss_index = DATA_DIR / "faiss_index.index"
-        if faiss_index.exists():
-            faiss_index.unlink()
-            add_log('已删除 FAISS 索引文件', 'info')
-            logger.info(f"已删除 FAISS 索引文件: {faiss_index}")
-        else:
-            add_log('FAISS 索引文件不存在，跳过删除', 'info')
-
-        # 删除帧图片目录
-        if VIDEO_FRAMES_DIR.exists():
-            import shutil
-            shutil.rmtree(VIDEO_FRAMES_DIR)
-            VIDEO_FRAMES_DIR.mkdir(parents=True)
-            add_log('已清空帧图片目录', 'info')
-            logger.info(f"已清空帧图片目录: {VIDEO_FRAMES_DIR}")
-        else:
-            add_log('帧图片目录不存在，跳过删除', 'info')
-
-        # 启动解析脚本
-        parse_status['is_parsing'] = True
-        parse_status['progress'] = 0
-        parse_status['logs'] = []
-
-        thread = threading.Thread(target=run_parse_script)
-        thread.daemon = True
-        thread.start()
-
-        add_log('开始重建索引...', 'info')
-
-        return jsonify({
-            'success': True,
-            'message': '索引重建已开始'
-        })
-    except Exception as e:
-        logger.error(f"重建索引失败: {e}", exc_info=True)
-        add_log(f'重建索引失败: {str(e)}', 'error')
         return jsonify({
             'success': False,
             'error': str(e)

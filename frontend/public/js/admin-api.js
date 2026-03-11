@@ -248,28 +248,54 @@ createApp({
             }
         }
 
-        async function rebuildIndex() {
-            if (!confirm('确定要重建索引吗？这将删除现有数据并重新解析所有视频，可能需要较长时间。')) {
-                return;
-            }
-
+        
+        async function viewFullLogs() {
             try {
-                const response = await fetch(`${API_BASE}/index/rebuild`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-
+                const response = await fetch(`${API_BASE}/parse/logs`);
                 const result = await response.json();
 
                 if (result.success) {
-                    isParsing.value = true;
-                    addLog('索引重建已开始...', 'info');
-                    startPolling();
+                    const logsContent = result.data.logs;
+
+                    // 创建新窗口显示完整日志
+                    const newWindow = window.open('', '_blank', 'width=800,height=600,scrollbars=yes');
+                    if (newWindow) {
+                        newWindow.document.write(`
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <title>解析日志 - GameLens</title>
+                                <style>
+                                    body {
+                                        font-family: 'Courier New', monospace;
+                                        margin: 20px;
+                                        background-color: #1a1a1a;
+                                        color: #e0e0e0;
+                                        white-space: pre-wrap;
+                                        word-wrap: break-word;
+                                    }
+                                    .info { color: #e0e0e0; }
+                                    .success { color: #4ade80; }
+                                    .warning { color: #fbbf24; }
+                                    .error { color: #f87171; }
+                                </style>
+                            </head>
+                            <body>
+                                <h2>解析日志 - ${result.data.file_path || ''}</h2>
+                                <hr>
+                                <pre>${logsContent.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                            </body>
+                            </html>
+                        `);
+                        newWindow.document.close();
+                    } else {
+                        alert('无法打开新窗口，请检查浏览器设置');
+                    }
                 } else {
-                    addLog(result.error, 'error');
+                    alert(`获取日志失败: ${result.error}`);
                 }
             } catch (error) {
-                addLog(`重建索引失败: ${error.message}`, 'error');
+                alert(`获取日志失败: ${error.message}`);
             }
         }
 
@@ -370,7 +396,7 @@ createApp({
             startParsing,
             parseSingle,
             checkSystem,
-            rebuildIndex
+            viewFullLogs
         };
     }
 }).mount('#app');

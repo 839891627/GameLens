@@ -779,6 +779,22 @@ body {
     height: 18px;
 }
 
+.btn-text {
+    background: none;
+    border: none;
+    color: var(--color-primary);
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    padding: var(--space-xs) var(--space-md);
+    border-radius: var(--radius-md);
+    transition: all var(--transition-base);
+}
+
+.btn-text:hover {
+    background: rgba(99, 102, 241, 0.1);
+}
+
 /* ==================== 空状态 ==================== */
 .empty-state {
     text-align: center;
