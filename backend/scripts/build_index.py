@@ -77,10 +77,30 @@ def format_timestamp(seconds: int) -> str:
 
 
 def get_bvid_from_url(url: str) -> str:
-    """从B站URL中提取BV号"""
-    if "BV" in url:
-        return url[url.find("BV"):url.find("BV") + 12]
-    return ""
+    """从B站URL中提取BV号和分P信息
+
+    Returns:
+        (bvid, part_number) - BV号和分P序号，如果没有分P则返回 (bvid, None)
+    """
+    import re
+
+    # 提取BV号
+    bv_match = re.search(r'(BV[\w]+)', url)
+    bvid = bv_match.group(1) if bv_match else ""
+
+    # 提取分P序号
+    p_match = re.search(r'[?&]p=(\d+)', url)
+    part = int(p_match.group(1)) if p_match else None
+
+    return bvid, part
+
+
+def get_video_identifier(url: str) -> str:
+    """获取视频唯一标识符（包含分P信息）"""
+    bvid, part = get_bvid_from_url(url)
+    if part:
+        return f"{bvid}_p{part}"
+    return bvid
 
 
 # ==================== 视频下载模块 ====================
@@ -97,23 +117,24 @@ class VideoDownloader:
         下载单个视频
 
         Args:
-            url: B站视频URL
+            url: B站视频URL（支持分P）
 
         Returns:
             视频信息字典，包含bvid, title, author, duration, path
         """
-        bvid = get_bvid_from_url(url)
-        video_file = self.output_dir / f"{bvid}.mp4"
+        bvid, part = get_bvid_from_url(url)
+        video_id = get_video_identifier(url)
+        video_file = self.output_dir / f"{video_id}.mp4"
 
         # 检查视频文件是否已存在
         if video_file.exists():
-            logger.info(f"视频文件已存在，跳过下载: {bvid}")
+            logger.info(f"视频文件已存在，跳过下载: {video_id}")
             # 仍然需要获取视频元数据
             try:
-                with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                with yt_dlp.YoutubeDL({'quiet': True, 'noplaylist': True}) as ydl:
                     info = ydl.extract_info(url, download=False)
                     return {
-                        'bvid': info.get('id', bvid),
+                        'bvid': video_id,  # 使用包含分P的标识符
                         'title': info.get('title', 'Unknown'),
                         'author': info.get('uploader', 'Unknown'),
                         'duration': int(info.get('duration', 0)),
@@ -127,7 +148,7 @@ class VideoDownloader:
         ydl_opts = {
             # B站专用格式配置 - 选择1080P及以下，自动合并音视频
             'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-            'outtmpl': str(self.output_dir / '%(id)s.%(ext)s'),
+            'outtmpl': str(self.output_dir / f'{video_id}.%(ext)s'),
             'quiet': False,
             'no_warnings': False,
             'extract_flat': False,
@@ -137,21 +158,23 @@ class VideoDownloader:
             'merge_output_format': 'mp4',
             # 不覆盖已存在文件
             'nooverwrites': True,
+            # 不下载播放列表（合集/分P），只下载单个视频
+            'noplaylist': True,
         }
 
-        logger.info(f"正在下载: {url}")
+        logger.info(f"正在下载: {url} (标识符: {video_id})")
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
 
                 video_info = {
-                    'bvid': info.get('id', bvid),
+                    'bvid': video_id,  # 使用包含分P的标识符
                     'title': info.get('title', 'Unknown'),
                     'author': info.get('uploader', 'Unknown'),
                     'duration': int(info.get('duration', 0)),
                     'url': url,
-                    'path': str(self.output_dir / f"{info['id']}.mp4")
+                    'path': str(self.output_dir / f"{video_id}.mp4")
                 }
 
                 logger.info(f"✓ 下载完成: {video_info['title']}")
@@ -297,10 +320,16 @@ class FeatureExtractor:
 
         for frame in tqdm(frames, desc="  特征提取"):
             full_path = PROJECT_ROOT / frame['image_path']
-            feature = self.extract(str(full_path))
-            frame['feature'] = feature.tolist()  # 转换为列表以便JSON序列化
+            try:
+                feature = self.extract(str(full_path))
+                frame['feature'] = feature.tolist()  # 转换为列表以便JSON序列化
+            except Exception as e:
+                logger.error(f"  特征提取失败: {frame['image_path']} - {e}")
+                frame['feature'] = None
 
-        logger.info("✓ 特征提取完成")
+        # 检查特征提取结果
+        with_feature = sum(1 for f in frames if f.get('feature') is not None)
+        logger.info(f"✓ 特征提取完成: {with_feature}/{len(frames)} 帧成功提取特征")
 
         return frames
 
@@ -341,6 +370,8 @@ class IndexBuilder:
             frame_records = []
             vectors = []
 
+            logger.info(f"  开始准备 {len(frames)} 个帧的数据和向量...")
+
             for idx, frame in enumerate(frames):
                 frame_records.append({
                     'video_id': video_id,
@@ -353,6 +384,10 @@ class IndexBuilder:
 
                 if 'feature' in frame:
                     vectors.append(frame['feature'])
+                else:
+                    logger.warning(f"  帧 {idx} ({frame.get('image_path')}) 缺少特征向量")
+
+            logger.info(f"  准备完成: {len(frame_records)} 条帧记录, {len(vectors)} 个特征向量")
 
             # 3. 批量插入帧记录
             insert_frames_batch(frame_records)
@@ -361,7 +396,10 @@ class IndexBuilder:
             # 4. 添加向量到 FAISS
             if vectors:
                 vectors_array = np.array(vectors, dtype='float32')
-                self.vector_store.add_vectors(vectors_array)
+                n_added = self.vector_store.add_vectors(vectors_array)
+                logger.info(f"  添加 {n_added} 个向量到 FAISS 索引")
+            else:
+                logger.warning(f"  警告: 无特征向量，请检查特征提取是否正常")
 
             return True
 
@@ -406,7 +444,7 @@ def load_existing_videos() -> set:
 
     logger.info(f"检测到现有数据库: {DATABASE_FILE}")
     try:
-        from gamelens.database import get_all_videos
+        from gamelens.core.database import get_all_videos
         videos = get_all_videos()
         processed_bvids = {v['bvid'] for v in videos}
         logger.info(f"已处理 {len(processed_bvids)} 个视频，将跳过")
@@ -443,11 +481,11 @@ def main():
     # 过滤出需要处理的视频（排除已处理的）
     new_urls = []
     for url in urls:
-        bvid = get_bvid_from_url(url)
-        if bvid not in processed_bvids:
+        video_id = get_video_identifier(url)
+        if video_id not in processed_bvids:
             new_urls.append(url)
         else:
-            logger.info(f"跳过已处理: {bvid}")
+            logger.info(f"跳过已处理: {video_id}")
 
     if not new_urls:
         logger.info("所有视频都已处理，无需重新下载")
@@ -529,7 +567,7 @@ def main():
     print(f"✓ 新处理视频数: {len(videos)}")
 
     # 从数据库获取统计信息
-    from gamelens.database import get_stats
+    from gamelens.core.database import get_stats
     stats = get_stats()
     print(f"✓ 数据库总视频数: {stats['total_videos']}")
     print(f"✓ 数据库总帧数: {stats['total_frames']}")

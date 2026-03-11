@@ -178,8 +178,8 @@
                                 <textarea
                                     v-model="bulkVideoUrls"
                                     class="textarea-input"
-                                    placeholder="批量添加视频链接（每行一个）&#10;https://www.bilibili.com/video/BV1xx411c7mD&#10;https://www.bilibili.com/video/BV1yy411c7mD&#10;https://www.bilibili.com/video/BV1zz411c7mD"
-                                    rows="4"
+                                    placeholder="批量添加视频链接（每行一个）&#10;https://www.bilibili.com/video/BV1xx411c7mD&#10;https://www.bilibili.com/video/BV1yy411c7mD&#10;https://www.bilibili.com/video/BV1zz411c7mD&#10;&#10;注意：不支持分P/合集视频，请使用单个视频链接"
+                                    rows="5"
                                 ></textarea>
                                 <button @click="addBulkVideos" class="btn-bulk">
                                     批量添加 ({{ bulkCount }} 个链接)

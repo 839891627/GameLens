@@ -23,7 +23,7 @@ from gamelens.core.database import (
     get_db, init_db, get_videos_with_frame_count, get_video_by_bvid,
     get_total_videos_count, get_total_frames_count, get_stats, db_exists, DB_PATH
 )
-from gamelens.core.vector_store import VectorStore, load_or_create_store
+from gamelens.core.vector_store import VectorStore, load_or_create_store, IndexNotInitialized
 
 # 配置日志
 logging.basicConfig(
@@ -93,11 +93,19 @@ def load_videos() -> List[Dict[str, Any]]:
 
 
 def extract_bvid(url: str) -> str:
-    """从URL提取BV号"""
-    if 'BV' in url:
-        start = url.find('BV')
-        return url[start:start + 12]
-    return ''
+    """从URL提取BV号和分P信息，返回唯一标识符"""
+    # 提取BV号（BV号长度通常是10-12位）
+    bv_match = re.search(r'(BV[0-9a-zA-Z]{10,12})', url)
+    bvid = bv_match.group(1) if bv_match else ""
+
+    # 提取分P序号
+    p_match = re.search(r'[?&]p=(\d+)', url)
+    part = p_match.group(1) if p_match else None
+
+    # 如果有分P，返回带分P的标识符
+    if part:
+        return f"{bvid}_p{part}"
+    return bvid
 
 
 def get_video_title(bvid: str, index_file: Path = None) -> str:
@@ -673,6 +681,24 @@ def match_image_api():
                 'error': '数据库不存在，请先解析视频或运行迁移脚本'
             }), 404
 
+        # 加载 FAISS 向量索引（包含一致性校验）
+        try:
+            vector_store = load_or_create_store()
+        except IndexNotInitialized as e:
+            logger.error(f"索引加载失败: {e}")
+            return jsonify({
+                'success': False,
+                'error': '索引与数据库不一致，需要重建索引。请删除 data/faiss_index.index 和 data/video_frames.db 后重新解析视频。',
+                'requires_rebuild': True
+            }), 500
+
+        if vector_store.is_empty():
+            logger.error("FAISS 索引为空")
+            return jsonify({
+                'success': False,
+                'error': '向量索引为空，请先解析视频'
+            }), 404
+
         # 解码 Base64 图片
         try:
             # 移除可能的数据 URL 前缀
@@ -721,15 +747,6 @@ def match_image_api():
         query_feature = query_feature.flatten()
 
         # FAISS 向量搜索
-        vector_store = load_or_create_store()
-
-        if vector_store.is_empty():
-            logger.error("FAISS 索引为空")
-            return jsonify({
-                'success': False,
-                'error': '向量索引为空，请先解析视频'
-            }), 404
-
         distances, frame_ids = vector_store.search(query_feature, k=max_results)
 
         # SQLite 查询元数据
@@ -771,6 +788,18 @@ def match_image_api():
                             'image_path': image_path
                         }
                     })
+                else:
+                    # 如果查询不到帧，说明索引和数据库不同步
+                    logger.warning(f"FAISS 索引位置 {faiss_idx} (DB ID {db_frame_id}) 在数据库中不存在，索引可能已损坏")
+
+        # 如果所有结果都查询失败，返回错误
+        if not results:
+            logger.error(f"所有匹配结果都查询失败，索引和数据库不同步")
+            return jsonify({
+                'success': False,
+                'error': '索引和数据库不同步，请删除 data/faiss_index.index 和 data/video_frames.db 后重新解析视频',
+                'requires_rebuild': True
+            }), 500
 
         logger.info(f"匹配完成，返回 {len(results)} 个结果")
 

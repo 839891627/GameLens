@@ -177,6 +177,10 @@ class VectorStore:
             self.is_trained = True
 
         # 添加向量
+        if vectors.shape[0] == 0:
+            logger.warning("尝试添加空向量数组，跳过")
+            return 0
+
         n_added = self.index.add(vectors.astype('float32'))
         logger.info(f"添加 {n_added} 个向量到索引，总数: {self.index.ntotal}")
 
@@ -304,13 +308,36 @@ def create_default_store() -> VectorStore:
 def load_or_create_store() -> VectorStore:
     """加载或创建向量存储
 
-    如果索引文件存在则加载，否则创建新的
+    如果索引文件存在则加载，否则创建新的。
+    同时校验索引与数据库的一致性。
     """
+    from gamelens.core.database import db_exists, get_total_frames_count
+
     store = VectorStore()
 
     if store.index_path.exists():
         if store.load_index():
             logger.info("加载已有索引")
+
+            # 校验索引与数据库的一致性
+            if db_exists():
+                db_frame_count = get_total_frames_count()
+                faiss_vector_count = store.get_vector_count()
+
+                if db_frame_count != faiss_vector_count:
+                    logger.error(f"数据不一致警告:")
+                    logger.error(f"  - 数据库帧数: {db_frame_count}")
+                    logger.error(f"  - FAISS向量数: {faiss_vector_count}")
+                    logger.error(f"  - 差异: {abs(db_frame_count - faiss_vector_count)}")
+                    logger.error(f"⚠️ 这会导致匹配结果错误！请删除以下文件并重新构建索引:")
+                    logger.error(f"  - {store.index_path}")
+                    logger.error(f"  - {store.index_path.parent / 'video_frames.db'}")
+                    raise IndexNotInitialized(
+                        f"索引与数据库不一致！数据库帧数({db_frame_count}) != FAISS向量数({faiss_vector_count})。"
+                        "请删除不一致的文件后重新运行索引构建。"
+                    )
+                else:
+                    logger.info(f"✓ 数据一致性校验通过: {faiss_vector_count} 个帧/向量")
         else:
             logger.warning("加载索引失败，创建新索引")
             store.create_index()
