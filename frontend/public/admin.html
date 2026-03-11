@@ -132,6 +132,28 @@
                             </button>
                         </div>
                     </div>
+
+                    <div class="action-card warning-action">
+                        <div class="card-header">
+                            <div class="card-icon warning">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                                    <polyline points="9 11 12 14 22 4"></polyline>
+                                </svg>
+                            </div>
+                            <div class="card-title">重建索引</div>
+                        </div>
+                        <div class="action-content">
+                            <p class="action-desc">删除现有索引并重新解析所有视频</p>
+                            <button @click="rebuildIndex" class="btn-warning" :disabled="isParsing">
+                                <span v-if="!isParsing">重建索引</span>
+                                <span v-else>
+                                    <span class="btn-spinner"></span>
+                                    <span>重建中...</span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
                 </section>
 
                 <!-- 添加视频区域 -->

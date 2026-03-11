@@ -21,7 +21,7 @@ import sys
 # 导入核心模块
 from gamelens.core.database import (
     get_db, init_db, get_videos_with_frame_count, get_video_by_bvid,
-    get_total_videos_count, get_total_frames_count, get_stats, db_exists
+    get_total_videos_count, get_total_frames_count, get_stats, db_exists, DB_PATH
 )
 from gamelens.core.vector_store import VectorStore, load_or_create_store
 
@@ -38,6 +38,8 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 VIDEO_LIST_FILE = DATA_DIR / "videos.txt"
 BUILD_SCRIPT = PROJECT_ROOT / "scripts" / "build_index.py"
+VIDEO_FRAMES_DIR = DATA_DIR / "video_frames"
+DATABASE_FILE = DB_PATH
 
 # ==================== Flask 应用 ====================
 # 纯 API 服务器，不托管静态文件（前后端分离）
@@ -752,6 +754,69 @@ def match_image_api():
         }), 500
     except Exception as e:
         logger.error(f"图片匹配失败: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/index/rebuild', methods=['POST'])
+def rebuild_index_api():
+    """重建视频索引（删除现有索引后重新构建）"""
+    global parse_status
+
+    if parse_status['is_parsing']:
+        return jsonify({
+            'success': False,
+            'error': '已有任务正在进行中'
+        }), 400
+
+    try:
+        # 删除现有数据库文件
+        if DATABASE_FILE.exists():
+            DATABASE_FILE.unlink()
+            add_log('已删除数据库文件', 'info')
+            logger.info(f"已删除数据库文件: {DATABASE_FILE}")
+        else:
+            add_log('数据库文件不存在，跳过删除', 'info')
+
+        # 删除 FAISS 索引文件
+        faiss_index = DATA_DIR / "faiss_index.index"
+        if faiss_index.exists():
+            faiss_index.unlink()
+            add_log('已删除 FAISS 索引文件', 'info')
+            logger.info(f"已删除 FAISS 索引文件: {faiss_index}")
+        else:
+            add_log('FAISS 索引文件不存在，跳过删除', 'info')
+
+        # 删除帧图片目录
+        if VIDEO_FRAMES_DIR.exists():
+            import shutil
+            shutil.rmtree(VIDEO_FRAMES_DIR)
+            VIDEO_FRAMES_DIR.mkdir(parents=True)
+            add_log('已清空帧图片目录', 'info')
+            logger.info(f"已清空帧图片目录: {VIDEO_FRAMES_DIR}")
+        else:
+            add_log('帧图片目录不存在，跳过删除', 'info')
+
+        # 启动解析脚本
+        parse_status['is_parsing'] = True
+        parse_status['progress'] = 0
+        parse_status['logs'] = []
+
+        thread = threading.Thread(target=run_parse_script)
+        thread.daemon = True
+        thread.start()
+
+        add_log('开始重建索引...', 'info')
+
+        return jsonify({
+            'success': True,
+            'message': '索引重建已开始'
+        })
+    except Exception as e:
+        logger.error(f"重建索引失败: {e}", exc_info=True)
+        add_log(f'重建索引失败: {str(e)}', 'error')
         return jsonify({
             'success': False,
             'error': str(e)

@@ -248,6 +248,31 @@ createApp({
             }
         }
 
+        async function rebuildIndex() {
+            if (!confirm('确定要重建索引吗？这将删除现有数据并重新解析所有视频，可能需要较长时间。')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/index/rebuild`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    isParsing.value = true;
+                    addLog('索引重建已开始...', 'info');
+                    startPolling();
+                } else {
+                    addLog(result.error, 'error');
+                }
+            } catch (error) {
+                addLog(`重建索引失败: ${error.message}`, 'error');
+            }
+        }
+
         async function checkParseStatus() {
             try {
                 const response = await fetch(`${API_BASE}/parse/status`);
@@ -344,7 +369,8 @@ createApp({
             removeVideo,
             startParsing,
             parseSingle,
-            checkSystem
+            checkSystem,
+            rebuildIndex
         };
     }
 }).mount('#app');
