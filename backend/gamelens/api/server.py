@@ -16,6 +16,8 @@ from typing import Dict, List, Any
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
+import sys
+
 # 导入核心模块
 from gamelens.core.database import (
     get_db, init_db, get_videos_with_frame_count, get_video_by_bvid,
@@ -161,7 +163,7 @@ def run_parse_script():
         for dep in dependencies:
             try:
                 result = subprocess.run(
-                    ['python', '-c', f'import {dep.split(".")[0]}'],
+                    [sys.executable, '-c', f'import {dep.split(".")[0]}'],
                     capture_output=True,
                     timeout=5
                 )
@@ -787,7 +789,7 @@ def check_system_api():
     for module, package in dependencies.items():
         try:
             result = subprocess.run(
-                ['python', '-c', f'import {module}'],
+                [sys.executable, '-c', f'import {module}'],
                 capture_output=True,
                 timeout=5
             )

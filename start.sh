@@ -51,14 +51,14 @@ case $choice in
 
         echo ""
         echo "启动后端..."
-        cd backend && python -m gamelens &
+        cd backend && /usr/local/bin/python3.12 -m gamelens &
         BACKEND_PID=$!
 
         sleep 2
 
         echo ""
         echo "启动前端..."
-        cd frontend && python -m http.server 8000 --directory public &
+        cd frontend && /usr/local/bin/python3.12 -m http.server 8000 --directory public &
         FRONTEND_PID=$!
 
         echo ""
@@ -79,7 +79,7 @@ case $choice in
         echo ""
         echo "启动后端..."
         cd backend
-        python -m gamelens
+        /usr/local/bin/python3.12 -m gamelens
         ;;
     3)
         echo ""
@@ -89,7 +89,7 @@ case $choice in
         echo ""
         echo "启动前端..."
         cd frontend
-        python -m http.server 8000 --directory public
+        /usr/local/bin/python3.12 -m http.server 8000 --directory public
         ;;
     4)
         echo ""
