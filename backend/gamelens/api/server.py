@@ -167,7 +167,7 @@ def run_parse_script():
         # 检查 Python 环境
         add_log('检查 Python 环境...', 'info')
         check_result = subprocess.run(
-            ['python', '--version'],
+            [sys.executable, '--version'],
             capture_output=True,
             text=True,
             timeout=10
@@ -216,7 +216,7 @@ def run_parse_script():
 
         # 使用 PPIPE 实时捕获输出
         process = subprocess.Popen(
-            ['python', str(BUILD_SCRIPT)],
+            [sys.executable, str(BUILD_SCRIPT)],
             cwd=str(PROJECT_ROOT),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,  # 将 stderr 合并到 stdout
@@ -838,13 +838,14 @@ def check_system_api():
     # 检查 Python
     try:
         result = subprocess.run(
-            ['python', '--version'],
+            [sys.executable, '--version'],
             capture_output=True,
             text=True,
             timeout=5
         )
         checks['python'] = result.returncode == 0
         checks['python_version'] = result.stdout.strip() if result.returncode == 0 else 'N/A'
+        checks['python_path'] = sys.executable  # 记录实际使用的 Python 路径
     except:
         checks['errors'].append('Python 不可用')
 

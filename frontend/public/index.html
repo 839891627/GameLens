@@ -5,9 +5,75 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>帧探·GameLens - 手游攻略智能匹配</title>
     <meta name="description" content="上传游戏截图，智能匹配攻略视频并精准跳转">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* 本地字体定义 */
+        @font-face {
+            font-family: 'Orbitron';
+            src: url('./fonts/Orbitron Light.ttf') format('truetype');
+            font-weight: 300;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Orbitron';
+            src: url('./fonts/Orbitron Medium.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Orbitron';
+            src: url('./fonts/Orbitron Medium.ttf') format('truetype');
+            font-weight: 500;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Orbitron';
+            src: url('./fonts/Orbitron Medium.ttf') format('truetype');
+            font-weight: 600;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Orbitron';
+            src: url('./fonts/Orbitron Bold.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Orbitron';
+            src: url('./fonts/Orbitron Black.ttf') format('truetype');
+            font-weight: 900;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Rajdhani';
+            src: url('./fonts/Rajdhani-Light.otf') format('opentype');
+            font-weight: 300;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Rajdhani';
+            src: url('./fonts/Rajdhani-Regular.otf') format('opentype');
+            font-weight: 400;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Rajdhani';
+            src: url('./fonts/Rajdhani-Medium.otf') format('opentype');
+            font-weight: 500;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Rajdhani';
+            src: url('./fonts/Rajdhani-SemiBold.otf') format('opentype');
+            font-weight: 600;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Rajdhani';
+            src: url('./fonts/Rajdhani-Bold.otf') format('opentype');
+            font-weight: 700;
+            font-style: normal;
+        }
+    </style>
     <link rel="stylesheet" href="./css/style.css">
 </head>
 <body>
@@ -342,8 +408,8 @@
         </footer>
     </div>
 
-    <!-- Vue 3 -->
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Vue 3 - 使用 bootcdn -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/vue/3.4.21/vue.global.js"></script>
 
     <!-- 应用代码 -->
     <script type="module" src="js/main.js"></script>
