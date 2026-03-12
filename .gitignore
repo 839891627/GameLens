@@ -24,6 +24,7 @@ ENV/
 .DS_Store
 
 # GameLens specific
+backend/downloads/
 downloads/
 *.mp4
 *.avi
@@ -41,6 +42,8 @@ backend/data/videos.txt
 server.log
 nohup.out
 backend/data/parse.log
+logs/*.log
+logs/*.pid
 
 # Environment variables
 .env
@@ -50,6 +53,7 @@ backend/data/parse.log
 *.tmp
 temp/
 tmp/
+*.part
 
 # OS
 Thumbs.db
@@ -59,8 +63,9 @@ Thumbs.db
 /.claude/settings.json
 
 # PIDs
-logs/frontend.pid
-logs/backend.pid
+/backend.pid
+/frontend.pid
+*.pid
 
 # Frontend - Node.js
 node_modules/
