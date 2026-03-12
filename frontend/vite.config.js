@@ -1,11 +1,13 @@
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
-import path from 'path';
 
 export default defineConfig({
   plugins: [vue()],
 
   publicDir: false, // Disable copying from public directory
+
+  // 使用相对路径，支持部署到子目录
+  base: './',
 
   build: {
     outDir: 'dist',
@@ -20,8 +22,8 @@ export default defineConfig({
     },
     rollupOptions: {
       input: {
-        main: path.resolve(__dirname, 'index.html'),
-        admin: path.resolve(__dirname, 'admin.html')
+        main: 'index.html',
+        admin: 'admin.html'
       },
       output: {
         manualChunks: {
