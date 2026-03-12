@@ -219,12 +219,6 @@ function getSimilarityColor(similarity) {
         </div>
         <span class="version">v1.0</span>
       </div>
-      <div class="nav-right">
-        <a href="/admin.html" class="admin-link">
-          <span>⚡</span>
-          <span>控制台</span>
-        </a>
-      </div>
     </div>
   </nav>
 
