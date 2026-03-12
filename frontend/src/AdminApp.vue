@@ -22,7 +22,14 @@ const systemCheck = ref(null);
 
 let pollingTimer = null;
 
-// 计算属性
+// 计算属性 - 修复负数问题
+const displayStats = computed(() => {
+  const total = stats.value.total || 0;
+  const processed = stats.value.processed || 0;
+  const pending = Math.max(0, total - processed);
+  return { total, processed, pending };
+});
+
 const filteredVideos = computed(() => {
   if (filter.value === 'pending') {
     return videos.value.filter(v => !v.processed);
@@ -133,7 +140,7 @@ async function removeVideo(index) {
 }
 
 async function startParsing() {
-  const pending = stats.value.pending;
+  const pending = displayStats.value.pending;
   if (pending === 0) {
     addLog('没有待解析的视频', 'warning');
     return;
@@ -151,17 +158,6 @@ async function startParsing() {
   } catch (error) {
     addLog(`启动解析失败: ${error.message}`, 'error');
   }
-}
-
-async function parseSingle(url) {
-  const bvid = extractBvid(url);
-  if (!confirm(`确定要解析视频 ${bvid} 吗？`)) {
-    return;
-  }
-
-  addLog(`开始解析: ${bvid}`, 'info');
-  // 单个解析暂不支持，提示用户使用一键解析
-  alert('单个解析功能开发中，请使用"一键解析"功能');
 }
 
 async function checkSystem() {
@@ -191,15 +187,35 @@ async function viewFullLogs() {
     const data = await api.parse.getParseLogs();
     const logsContent = data.logs;
 
-    const newWindow = window.open('', '_blank', 'width=800,height=600,scrollbars=yes');
+    const newWindow = window.open('', '_blank', 'width=900,height=700,scrollbars=yes');
     if (newWindow) {
       newWindow.document.write(`
         <!DOCTYPE html>
         <html>
-        <head><title>解析日志</title></head>
-        <body style="font-family: monospace; background: #1a1a1a; color: #e0e0e0;">
+        <head>
+          <title>解析日志 - GameLens</title>
+          <style>
+            body {
+              font-family: 'Rajdhani', 'Courier New', monospace;
+              background: #0a0a0f;
+              color: #f0f0f5;
+              margin: 0;
+              padding: 20px;
+            }
+            h2 { color: #00f0ff; margin-bottom: 10px; text-shadow: 0 0 10px #00f0ff; }
+            pre {
+              background: #12121a;
+              padding: 20px;
+              border-radius: 12px;
+              overflow-x: auto;
+              font-size: 12px;
+              line-height: 1.5;
+              border: 1px solid rgba(0, 240, 255, 0.1);
+            }
+          </style>
+        </head>
+        <body>
           <h2>解析日志</h2>
-          <hr>
           <pre>${logsContent.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
         </body>
         </html>
@@ -251,7 +267,6 @@ function stopPolling() {
   }
 }
 
-// 工具函数
 function extractBvid(url) {
   const match = url.match(/(BV[\w]+)/);
   return match ? match[1] : '';
@@ -267,364 +282,319 @@ function addLog(message, type = 'info') {
     parseLogs.value = parseLogs.value.slice(0, 100);
   }
 }
+
+function formatNumber(num) {
+  return num >= 1000 ? (num / 1000).toFixed(1) + 'k' : num.toString();
+}
 </script>
 
 <template>
-  <div id="app">
-    <!-- 顶部导航 -->
-    <header class="header">
-      <div class="header-container">
-        <div class="header-brand">
-          <div class="brand-logo">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-              <polyline points="2 17 12 22 22 17"></polyline>
-              <polyline points="2 12 12 17 22 12"></polyline>
-            </svg>
+  <div class="admin-console">
+    <!-- 背景动画 -->
+    <div class="bg-animation">
+      <div class="grid-overlay"></div>
+      <div class="floating-particles">
+        <div class="particle" style="left: 10%; top: 20%; animation-delay: 0s;"></div>
+        <div class="particle" style="left: 30%; top: 60%; animation-delay: -2s;"></div>
+        <div class="particle" style="left: 50%; top: 30%; animation-delay: -4s;"></div>
+        <div class="particle" style="left: 70%; top: 70%; animation-delay: -6s;"></div>
+        <div class="particle" style="left: 90%; top: 40%; animation-delay: -8s;"></div>
+      </div>
+      <div class="glow-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+      </div>
+    </div>
+
+    <!-- 导航栏 -->
+    <nav class="navbar">
+      <div class="container">
+        <div class="nav-left">
+          <div class="logo">
+            <span class="logo-symbol">◈</span>
+            <span class="logo-text">GAMELENS</span>
           </div>
-          <div class="brand-text">
-            <span class="brand-name">GAMELENS</span>
-            <span class="brand-version">Console</span>
+          <span class="version">v1.0</span>
+        </div>
+        <div class="nav-right">
+          <div class="stats-bar">
+            <div class="stat-item">
+              <span class="stat-label">总数</span>
+              <span class="stat-value">{{ formatNumber(displayStats.total) }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">已解析</span>
+              <span class="stat-value processed">{{ formatNumber(displayStats.processed) }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">待处理</span>
+              <span class="stat-value pending">{{ formatNumber(displayStats.pending) }}</span>
+            </div>
           </div>
         </div>
-
-        <div class="header-stats">
-          <div class="header-stat">
-            <span class="stat-label">视频库</span>
-            <span class="stat-value">{{ stats.total || 0 }}</span>
-          </div>
-          <div class="header-stat">
-            <span class="stat-label">已解析</span>
-            <span class="stat-value">{{ stats.processed || 0 }}</span>
-          </div>
-          <div class="header-stat">
-            <span class="stat-label">待处理</span>
-            <span class="stat-value">{{ stats.pending || 0 }}</span>
-          </div>
-        </div>
-
-        <div class="header-nav">
-          <a href="/" class="nav-link">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="19" y1="12" x2="5" y2="12"></line>
-              <polyline points="12 19 5 12 12 5"></polyline>
-            </svg>
-            <span>返回主页</span>
+        <div class="nav-right">
+          <a href="/" class="admin-link">
+            <span>🏠</span>
+            <span>返回首页</span>
           </a>
         </div>
       </div>
-    </header>
+    </nav>
 
-    <!-- 主内容 -->
-    <main class="main">
-      <div class="main-container">
-        <!-- 快速操作卡片 -->
-        <section class="actions-grid">
-          <div class="action-card stat-card">
-            <div class="card-header">
-              <div class="card-icon primary">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                  <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                  <line x1="12" y1="22.08" x2="12" y2="12"></line>
-                </svg>
-              </div>
-              <div class="card-title">视频库概览</div>
-            </div>
-            <div class="stat-grid">
-              <div class="stat-block">
-                <span class="stat-number">{{ stats.total || 0 }}</span>
-                <span class="stat-desc">总数</span>
-              </div>
-              <div class="stat-divider"></div>
-              <div class="stat-block">
-                <span class="stat-number success">{{ stats.processed || 0 }}</span>
-                <span class="stat-desc">已解析</span>
-              </div>
-              <div class="stat-divider"></div>
-              <div class="stat-block">
-                <span class="stat-number warning">{{ stats.pending || 0 }}</span>
-                <span class="stat-desc">待处理</span>
-              </div>
-            </div>
-          </div>
+    <!-- 主内容区 -->
+    <main class="console-main">
+      <div class="content-grid">
+        <!-- 左侧：操作面板 -->
+        <div class="operations-panel">
+          <!-- 快速操作 -->
+          <section class="panel-section">
+            <h3 class="section-header">
+              <span class="header-icon">⚡</span>
+              <span>快捷操作</span>
+            </h3>
 
-          <div class="action-card primary-action">
-            <div class="card-header">
-              <div class="card-icon accent">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                </svg>
-              </div>
-              <div class="card-title">批量解析</div>
-            </div>
-            <div class="action-content">
-              <p class="action-desc">解析所有待处理视频并提取关键帧</p>
-              <button @click="startParsing" class="btn-primary" :disabled="isParsing">
-                <span v-if="!isParsing">开始解析</span>
-                <span v-else>
-                  <span class="btn-spinner"></span>
-                  <span>解析中...</span>
-                </span>
-              </button>
-            </div>
-          </div>
-
-          <div class="action-card">
-            <div class="card-header">
-              <div class="card-icon info">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="16" x2="12" y2="12"></line>
-                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                </svg>
-              </div>
-              <div class="card-title">系统检查</div>
-            </div>
-            <div class="action-content">
-              <p class="action-desc">检查服务器环境和依赖配置</p>
-              <button @click="checkSystem" class="btn-secondary" :disabled="isChecking">
-                <span v-if="!isChecking">检查系统</span>
-                <span v-else>
-                  <span class="btn-spinner"></span>
-                  <span>检查中...</span>
-                </span>
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- 添加视频区域 -->
-        <section class="content-section">
-          <div class="section-header">
-            <h2 class="section-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              添加视频
-            </h2>
-          </div>
-
-          <div class="add-methods">
-            <!-- 单个添加 -->
-            <div class="add-method">
-              <div class="method-label">
-                <span class="label-number">01</span>
-                <h3>单个添加</h3>
-              </div>
-              <div class="method-content">
-                <div class="input-group">
-                  <input
-                    v-model="newVideoUrl"
-                    type="text"
-                    class="text-input"
-                    placeholder="粘贴B站视频链接，如：https://www.bilibili.com/video/BV1xx411c7mD"
-                    @keyup.enter="addSingleVideo"
-                  >
-                  <button @click="addSingleVideo" class="btn-add">添加</button>
+            <div class="action-grid">
+              <button
+                @click="startParsing"
+                class="action-card primary-action"
+                :disabled="isParsing || displayStats.pending === 0"
+              >
+                <div class="action-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                  </svg>
                 </div>
-              </div>
-            </div>
+                <div class="action-content">
+                  <span class="action-title">批量解析</span>
+                  <span class="action-desc">{{ displayStats.pending }} 个视频</span>
+                </div>
+                <div v-if="isParsing" class="action-status">
+                  <span class="spinner"></span>
+                </div>
+              </button>
 
-            <!-- 批量添加 -->
-            <div class="add-method">
-              <div class="method-label">
-                <span class="label-number">02</span>
-                <h3>批量添加</h3>
+              <button
+                @click="checkSystem"
+                class="action-card system-check"
+                :disabled="isChecking"
+              >
+                <div class="action-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 6v6l4 2"/>
+                  </svg>
+                </div>
+                <div class="action-content">
+                  <span class="action-title">系统检查</span>
+                  <span class="action-desc">验证环境依赖</span>
+                </div>
+              </button>
+            </div>
+          </section>
+
+          <!-- 添加视频 -->
+          <section class="panel-section">
+            <h3 class="section-header">
+              <span class="header-icon">➕</span>
+              <span>添加视频</span>
+            </h3>
+
+            <div class="add-section">
+              <div class="input-row">
+                <input
+                  v-model="newVideoUrl"
+                  type="text"
+                  placeholder="粘贴 B站视频链接..."
+                  @keyup.enter="addSingleVideo"
+                  class="video-input"
+                >
+                <button @click="addSingleVideo" class="add-btn">添加</button>
               </div>
-              <div class="method-content">
+
+              <div class="bulk-area">
                 <textarea
                   v-model="bulkVideoUrls"
-                  class="textarea-input"
-                  placeholder="批量添加视频链接（每行一个）&#10;https://www.bilibili.com/video/BV1xx411c7mD&#10;https://www.bilibili.com/video/BV1yy411c7mD"
-                  rows="5"
+                  placeholder="批量添加（每行一个链接）&#10;https://www.bilibili.com/video/BV..."
+                  rows="4"
+                  class="bulk-input"
                 ></textarea>
-                <button @click="addBulkVideos" class="btn-bulk">
-                  批量添加 ({{ bulkCount }} 个链接)
+                <button @click="addBulkVideos" class="bulk-btn">
+                  批量添加 ({{ bulkCount }})
                 </button>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
 
-        <!-- 视频列表 -->
-        <section class="content-section">
-          <div class="section-header">
-            <h2 class="section-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="8" y1="6" x2="21" y2="6"></line>
-                <line x1="8" y1="12" x2="21" y2="12"></line>
-                <line x1="8" y1="18" x2="21" y2="18"></line>
-                <line x1="3" y1="6" x2="3.01" y2="6"></line>
-                <line x1="3" y1="12" x2="3.01" y2="12"></line>
-                <line x1="3" y1="18" x2="3.01" y2="18"></line>
-              </svg>
-              视频列表
-              <span class="section-count">{{ filteredVideos.length }}</span>
-            </h2>
-            <div class="filter-group">
-              <button @click="filter = 'all'" :class="['filter-btn', { active: filter === 'all' }]">全部</button>
-              <button @click="filter = 'pending'" :class="['filter-btn', { active: filter === 'pending' }]">待解析</button>
-              <button @click="filter = 'processed'" :class="['filter-btn', { active: filter === 'processed' }]">已解析</button>
-            </div>
-          </div>
+        <!-- 右侧：视频列表 -->
+        <div class="videos-panel">
+          <section class="panel-section">
+            <div class="list-header">
+              <h3 class="section-header">
+                <span class="header-icon">📼</span>
+                <span>视频库</span>
+                <span class="count-badge">{{ filteredVideos.length }}</span>
+              </h3>
 
-          <div class="video-list" v-if="paginatedVideos.length > 0">
-            <div
-              v-for="(video, index) in paginatedVideos"
-              :key="index"
-              class="video-item"
-              :class="{ processed: video.processed, pending: !video.processed }"
-            >
-              <div class="video-status">
-                <span v-if="video.processed" class="status-badge success">
-                  <span class="status-dot"></span>
-                  已解析
-                </span>
-                <span v-else class="status-badge warning">
-                  <span class="status-dot"></span>
-                  待解析
-                </span>
+              <div class="filter-tabs">
+                <button
+                  v-for="tab in [
+                    { key: 'all', label: '全部' },
+                    { key: 'pending', label: '待处理' },
+                    { key: 'processed', label: '已解析' }
+                  ]"
+                  :key="tab.key"
+                  @click="filter = tab.key"
+                  :class="['tab-btn', { active: filter === tab.key }]"
+                >
+                  {{ tab.label }}
+                </button>
               </div>
+            </div>
 
-              <div class="video-info">
-                <div class="video-url">{{ video.url }}</div>
-                <div class="video-meta">
-                  <span class="meta-item">
-                    <span class="meta-label">BVID:</span>
-                    <code class="meta-value">{{ video.bvid }}</code>
-                  </span>
-                  <span v-if="video.title" class="meta-item">
-                    <span class="meta-label">标题:</span>
-                    <span class="meta-value">{{ video.title }}</span>
-                  </span>
+            <div class="video-list">
+              <div
+                v-for="(video, index) in paginatedVideos"
+                :key="index"
+                class="video-row"
+                :class="{ processed: video.processed, pending: !video.processed }"
+              >
+                <div class="row-status">
+                  <div class="status-dot" :class="video.processed ? 'processed' : 'pending'"></div>
+                </div>
+
+                <div class="row-main">
+                  <div class="video-bvid">
+                    <code>{{ video.bvid }}</code>
+                  </div>
+                  <div v-if="video.title" class="video-title">
+                    {{ video.title }}
+                  </div>
+                </div>
+
+                <div class="row-actions">
+                  <button
+                    v-if="!video.processed"
+                    @click="startParsing"
+                    class="icon-btn process"
+                    title="解析"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                  </button>
+                  <button
+                    @click="removeVideo(index)"
+                    class="icon-btn delete"
+                    title="删除"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="18" y1="6" x2="6" y2="18"/>
+                      <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
 
-              <div class="video-actions">
+              <!-- 空状态 -->
+              <div v-if="paginatedVideos.length === 0" class="empty-state">
+                <div class="empty-icon">📂</div>
+                <h3>暂无视频</h3>
+                <p>添加 B站视频链接开始使用</p>
+              </div>
+
+              <!-- 分页 -->
+              <div v-if="totalPages > 1" class="pagination">
                 <button
-                  v-if="!video.processed"
-                  @click="parseSingle(video.url)"
-                  class="btn-icon-btn"
-                  title="解析此视频"
+                  @click="currentPage--"
+                  :disabled="currentPage === 1"
+                  class="page-btn"
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    <polyline points="15 18 9 12 15 6"/>
                   </svg>
                 </button>
+                <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
                 <button
-                  @click="removeVideo(index)"
-                  class="btn-icon-btn danger"
-                  title="删除"
+                  @click="currentPage++"
+                  :disabled="currentPage === totalPages"
+                  class="page-btn"
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <polyline points="9 18 15 12 9 18"/>
                   </svg>
                 </button>
               </div>
             </div>
-          </div>
+          </section>
 
-          <!-- 空状态 -->
-          <div v-else class="empty-state">
-            <div class="empty-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
-                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-              </svg>
-            </div>
-            <h3>暂无视频</h3>
-            <p>添加视频链接开始使用</p>
-          </div>
+          <!-- 日志面板 -->
+          <section v-if="parseLogs.length > 0 || systemCheck" class="panel-section logs-section">
+            <h3 class="section-header">
+              <span class="header-icon">📋</span>
+              <span>{{ systemCheck ? '系统检查' : '操作日志' }}</span>
+              <button v-if="!systemCheck && parseLogs.length > 0" @click="viewFullLogs" class="view-all-btn">
+                查看全部
+              </button>
+            </h3>
 
-          <!-- 分页 -->
-          <div v-if="totalPages > 1" class="pagination">
-            <button
-              @click="currentPage--"
-              :disabled="currentPage === 1"
-              class="page-btn"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="15 18 9 12 15 6"></polyline>
-              </svg>
-            </button>
-            <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
-            <button
-              @click="currentPage++"
-              :disabled="currentPage === totalPages"
-              class="page-btn"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="9 18 15 12 15 18"></polyline>
-              </svg>
-            </button>
-          </div>
-        </section>
+            <!-- 系统检查结果 -->
+            <div v-if="systemCheck" class="system-check">
+              <div class="check-section">
+                <h4 class="check-title">Python 环境</h4>
+                <div class="check-item" :class="{ ok: systemCheck.python, fail: !systemCheck.python }">
+                  <span class="check-label">版本</span>
+                  <span class="check-value">{{ systemCheck.python_version || 'N/A' }}</span>
+                  <span class="check-mark">{{ systemCheck.python ? '✓' : '✗' }}</span>
+                </div>
+              </div>
 
-        <!-- 日志/系统检查 -->
-        <section v-if="parseLogs.length > 0 || systemCheck" class="content-section logs-section">
-          <div class="section-header">
-            <h2 class="section-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="4 17 10 11 4 5"></polyline>
-                <line x1="12" y1="19" x2="20" y2="19"></line>
-              </svg>
-              <span v-if="systemCheck">系统检查结果</span>
-              <span v-else>解析日志</span>
-            </h2>
-            <button v-if="!systemCheck && parseLogs.length > 0" @click="viewFullLogs" class="btn-text">
-              查看完整日志
-            </button>
-          </div>
+              <div class="check-section" v-if="systemCheck.dependencies">
+                <h4 class="check-title">依赖包</h4>
+                <div
+                  v-for="(status, dep) in systemCheck.dependencies"
+                  :key="dep"
+                  class="check-item"
+                  :class="{ ok: status, fail: !status }"
+                >
+                  <span class="check-label">{{ dep }}</span>
+                  <span class="check-mark">{{ status ? '✓' : '✗' }}</span>
+                </div>
+              </div>
 
-          <!-- 系统检查结果 -->
-          <div v-if="systemCheck" class="system-check-panel">
-            <div class="check-group">
-              <h3 class="check-group-title">Python 环境</h3>
-              <div class="check-item" :class="{ ok: systemCheck.python, fail: !systemCheck.python }">
-                <span class="check-label">Python 版本</span>
-                <span class="check-value">{{ systemCheck.python_version || '未安装' }}</span>
-                <span class="check-status">{{ systemCheck.python ? '✓' : '✗' }}</span>
+              <div v-if="systemCheck.errors && systemCheck.errors.length" class="errors-section">
+                <h4 class="errors-title">错误信息</h4>
+                <ul class="errors-list">
+                  <li v-for="(error, i) in systemCheck.errors" :key="i">{{ error }}</li>
+                </ul>
               </div>
             </div>
 
-            <div class="check-group">
-              <h3 class="check-group-title">依赖包</h3>
-              <div v-for="(status, dep) in systemCheck.dependencies" :key="dep" class="check-item" :class="{ ok: status, fail: !status }">
-                <span class="check-label">{{ dep }}</span>
-                <span class="check-status">{{ status ? '✓' : '✗' }}</span>
+            <!-- 日志列表 -->
+            <div v-else class="logs-list">
+              <div
+                v-for="(log, i) in parseLogs"
+                :key="i"
+                :class="['log-item', `log-${log.type}`]"
+              >
+                <span class="log-time">{{ log.time }}</span>
+                <span class="log-msg">{{ log.message }}</span>
               </div>
             </div>
-
-            <div v-if="systemCheck.errors && systemCheck.errors.length > 0" class="check-errors">
-              <h4>错误信息</h4>
-              <ul>
-                <li v-for="(error, index) in systemCheck.errors" :key="index">{{ error }}</li>
-              </ul>
-            </div>
-          </div>
-
-          <!-- 解析日志 -->
-          <div v-else class="logs-panel">
-            <div
-              v-for="(log, index) in parseLogs"
-              :key="index"
-              :class="['log-entry', `log-${log.type}`]"
-            >
-              <span class="log-time">{{ log.time }}</span>
-              <span class="log-message">{{ log.message }}</span>
-            </div>
-          </div>
-        </section>
+          </section>
+        </div>
       </div>
     </main>
 
-    <!-- 页脚 -->
-    <footer class="footer">
-      <div class="footer-container">
-        <p>GameLens 管理控制台 · Beta v1.0</p>
+    <!-- 底部状态栏 -->
+    <footer class="console-footer">
+      <div class="footer-left">
+        <span class="status-dot online"></span>
+        <span class="status-text">已连接</span>
+      </div>
+      <div class="footer-right">
+        <span class="version">GameLens v1.0.0</span>
       </div>
     </footer>
   </div>

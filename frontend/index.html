@@ -2,14 +2,250 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <title>帧探·GameLens - 手游攻略智能匹配</title>
     <meta name="description" content="上传游戏截图，智能匹配攻略视频并精准跳转">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;900&family=Rajdhani:wght@500;600&display=swap" rel="stylesheet">
+    <style>
+        /* 产品介绍横幅样式 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            min-height: 100vh;
+        }
+
+        body {
+            background: #0a0a0f;
+            color: #f0f0f5;
+            font-family: 'Rajdhani', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Vue 应用根容器 */
+        #app {
+            position: relative;
+            z-index: 1;
+        }
+
+        .product-banner {
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            border-bottom: 1px solid rgba(99, 102, 241, 0.3);
+            padding: 12px 0;
+            position: relative;
+            overflow: hidden;
+            z-index: 10;
+            width: 100%;
+        }
+
+        .product-banner::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.1), transparent);
+            animation: shimmer 3s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .product-banner-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        .product-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(99, 102, 241, 0.2);
+            border: 1px solid rgba(99, 102, 241, 0.4);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #a5b4fc;
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+
+        .product-badge-dot {
+            width: 6px;
+            height: 6px;
+            background: #10b981;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .product-features {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .product-feature {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #d1d5db;
+        }
+
+        .product-feature-icon {
+            color: #818cf8;
+            flex-shrink: 0;
+        }
+
+        .product-tagline {
+            font-size: 13px;
+            color: #f3f4f6;
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+
+        .product-tagline span {
+            background: linear-gradient(90deg, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 600;
+        }
+
+        /* 移动端优化 */
+        @media (max-width: 768px) {
+            .product-banner {
+                padding: 10px 0;
+            }
+
+            .product-banner-content {
+                padding: 0 16px;
+                gap: 12px;
+                justify-content: flex-start;
+            }
+
+            .product-badge {
+                font-size: 11px;
+                padding: 3px 10px;
+            }
+
+            .product-tagline {
+                font-size: 12px;
+            }
+
+            .product-features {
+                gap: 12px;
+            }
+
+            .product-feature {
+                font-size: 11px;
+                gap: 4px;
+            }
+
+            .product-feature span:not(.product-feature-icon) {
+                display: none;
+            }
+
+            .product-feature::after {
+                content: attr(data-short);
+                display: inline;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .product-banner {
+                padding: 8px 0;
+            }
+
+            .product-banner-content {
+                padding: 0 12px;
+                gap: 8px;
+            }
+
+            .product-badge {
+                order: 1;
+            }
+
+            .product-tagline {
+                order: 2;
+                font-size: 11px;
+            }
+
+            .product-features {
+                order: 3;
+                gap: 8px;
+                width: 100%;
+                justify-content: center;
+            }
+
+            .product-feature {
+                font-size: 10px;
+                padding: 2px 6px;
+                background: rgba(99, 102, 241, 0.1);
+                border-radius: 4px;
+            }
+        }
+
+        /* 触摸优化 */
+        @media (hover: none) and (pointer: coarse) {
+            .product-banner {
+                padding: 14px 0;
+            }
+        }
+    </style>
 </head>
 <body>
+    <!-- 产品介绍横幅 -->
+    <div class="product-banner">
+        <div class="product-banner-content">
+            <div class="product-badge">
+                <span class="product-badge-dot"></span>
+                <span>AI 驱动</span>
+            </div>
+            <div class="product-tagline">
+                <span>一图即搜</span> · 秒懂攻略
+            </div>
+            <div class="product-features">
+                <div class="product-feature" data-short="智能匹配">
+                    <span class="product-feature-icon">◉</span>
+                    <span>图像智能匹配</span>
+                </div>
+                <div class="product-feature" data-short="精准定位">
+                    <span class="product-feature-icon">◉</span>
+                    <span>精准时间定位</span>
+                </div>
+                <div class="product-feature" data-short="向量加速">
+                    <span class="product-feature-icon">◉</span>
+                    <span>向量数据库加速</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
 </body>
