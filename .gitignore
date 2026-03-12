@@ -31,11 +31,16 @@ downloads/
 *.mov
 backend/data/video_frames/
 backend/data/video_index.json
+backend/data/faiss_index.index
+backend/data/video_frames.db
+backend/data/videos.txt
+*.pid
 
 # Logs
 *.log
 server.log
 nohup.out
+backend/data/parse.log
 
 # Environment variables
 .env
@@ -54,8 +59,8 @@ Thumbs.db
 /.claude/settings.json
 
 # PIDs
-/logs/frontend.pid
-/logs/backend.pid
+logs/frontend.pid
+logs/backend.pid
 
 # Frontend - Node.js
 node_modules/
