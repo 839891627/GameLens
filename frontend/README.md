@@ -1,44 +1,60 @@
-# 前端部署说明
+# 帧探·GameLens 前端
+
+基于 Vue 3 + Vite 构建的现代化前端应用，提供游戏截图智能匹配功能。
 
 ## 目录结构
 
 ```
 frontend/
-├── public/           # 静态文件
-│   ├── index.html
-│   └── admin.html
-└── src/              # 源文件
-    ├── css/
-    └── js/
+├── index.html           # 主页面入口
+├── admin.html           # 管理控制台入口
+├── vite.config.js       # Vite 配置文件
+├── package.json         # 依赖配置
+├── src/                 # 源代码目录
+│   ├── css/
+│   │   ├── style.css    # 主页面样式
+│   │   └── admin.css    # 管理控制台样式
+│   └── js/
+│       ├── main.js      # 主页面逻辑
+│       ├── admin-api.js # 管理控制台逻辑
+│       └── config.js    # 配置文件
+└── dist/                # 构建输出目录（已 gitignore）
 ```
 
-## 本地开发
+## 开发
 
-### 启动前端服务器
+### 安装依赖
 
 ```bash
-# 方式1：使用 Python（推荐）
 cd frontend
-python -m http.server 8000 --directory public
-
-# 方式2：使用 Node.js
-npx serve public -p 8000
+npm install
 ```
 
-访问：http://localhost:8000
-
-### 启动后端 API
+### 启动开发服务器
 
 ```bash
-cd backend
-python -m gamelens
+npm run dev
 ```
 
-API 地址：http://localhost:8080/api
+访问：http://localhost:3000
 
-## 生产部署
+### 构建生产版本
 
-### 方式1：Nginx 静态托管
+```bash
+npm run build
+```
+
+构建产物输出到 `dist/` 目录。
+
+### 预览构建结果
+
+```bash
+npm run preview
+```
+
+## 部署
+
+### Nginx 静态托管
 
 ```nginx
 server {
@@ -47,7 +63,7 @@ server {
 
     # 前端静态文件
     location / {
-        root /path/to/gamelens/frontend/public;
+        root /path/to/gamelens/frontend/dist;
         try_files $uri $uri/ /index.html;
     }
 
@@ -65,56 +81,49 @@ server {
 }
 ```
 
-### 方式2：Vercel/Netlify
+### Vercel/Netlify
 
 **Vercel:**
 ```bash
-# 安装 Vercel CLI
-npm i -g vercel
-
-# 部署
 cd frontend
+npm install -g vercel
 vercel --prod
 ```
 
 **Netlify:**
-```bash
-# 拖拽 frontend/public 目录到 Netlify
-```
+将 `frontend/dist` 目录拖拽到 Netlify 部署页面。
 
-### 方式3：CDN
+## 技术栈
 
-将 frontend/public 目录上传到：
-- 阿里云 OSS
-- 腾讯云 COS
-- AWS S3 + CloudFront
+- **框架**: Vue 3 (Composition API)
+- **构建工具**: Vite 5
+- **样式**: 原生 CSS
+- **代码压缩**: Terser
 
 ## 配置说明
 
-### API 地址配置
+### API 地址
 
 在 `src/js/config.js` 中配置 API 地址：
 
 ```javascript
 // 开发环境
-const API_BASE = 'http://localhost:8080/api';
-
-// 生产环境（通过 Nginx 代理）
 const API_BASE = '/api';
+
+// 生产环境（如需要单独的后端域名）
+// const API_BASE = 'https://api.yourdomain.com/api';
 ```
 
-### 环境变量
+### Vite 配置
 
-创建 `frontend/public/js/env.js`：
-
-```javascript
-window.GAMELENS_CONFIG = {
-    API_BASE: '/api',  // 或 'https://api.yourdomain.com/api'
-};
-```
+- 开发服务器端口：3000
+- API 代理：`/api` → `http://localhost:8080`
+- 输出目录：`dist/`
+- 资源分类：`assets/`、`css/`、`fonts/`
+- 生产构建自动移除 console.log
 
 ## 注意事项
 
-1. **跨域问题**：后端已配置 CORS，支持跨域请求
-2. **视频索引**：开发时需要配置代理访问后端数据
-3. **API 超时**：默认30秒，可在 config.js 中调整
+1. **跨域问题**：开发环境已配置 Vite 代理，生产环境需 Nginx 代理
+2. **缓存策略**：Vite 构建生成的文件名包含 hash，可利用浏览器缓存
+3. **首屏加载**：Vue 按需加载，首屏体积优化至最小

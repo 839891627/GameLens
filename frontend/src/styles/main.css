@@ -58,9 +58,21 @@
     box-sizing: border-box;
 }
 
+/* Vue 未编译模板隐藏 - 防止闪烁 */
+[v-cloak] {
+    display: none !important;
+}
+
 html {
     font-size: 16px;
     scroll-behavior: smooth;
+}
+
+/* Vue 应用根容器 */
+#app {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
 }
 
 body {

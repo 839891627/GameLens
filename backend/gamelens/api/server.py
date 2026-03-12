@@ -255,17 +255,8 @@ def run_parse_script():
 
 # ==================== API 路由 ====================
 
-@app.route('/')
-def index():
-    """主页"""
-    return send_from_directory('.', 'index.html')
-
-
-@app.route('/admin.html')
-def admin():
-    """管理后台"""
-    return send_from_directory('.', 'admin.html')
-
+# 注意：前端采用前后端分离架构，静态文件由前端独立提供
+# 后端仅提供 API 接口
 
 @app.route('/frames/<path:filepath>')
 def serve_frame(filepath):
@@ -917,12 +908,12 @@ def main():
     print(f"   - API Base: http://localhost:8080/api")
     print()
     print("🌐 前端需要单独启动:")
-    print(f"   - 在项目根目录运行: ./start.sh")
-    print(f"   - 或手动启动: cd frontend && python -m http.server 8000 --directory public")
+    print(f"   - 开发模式: cd frontend && npm run dev")
+    print(f"   - 生产模式: cd frontend && npm run build && npm run preview")
     print()
-    print("📍 前端访问地址:")
-    print(f"   - 主页: http://localhost:8000")
-    print(f"   - 管理后台: http://localhost:8000/admin.html")
+    print("📍 前端访问地址（开发模式）:")
+    print(f"   - 主页: http://localhost:3000")
+    print(f"   - 管理后台: http://localhost:3000/admin.html")
     print()
     print("按 Ctrl+C 停止 API 服务器")
     print("=" * 60)

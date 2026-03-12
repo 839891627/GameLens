@@ -61,10 +61,14 @@ def cmd_start(args):
     if not check_environment(verbose=False):
         print("\n⚠️  环境检查未通过，但仍将尝试启动服务器")
 
-    print("\n📍 访问地址:")
-    print(f"   - 主页: http://localhost:{args.port}")
-    print(f"   - 管理后台: http://localhost:{args.port}/admin.html")
-    print("\n按 Ctrl+C 停止服务器\n")
+    print("\n📍 服务地址:")
+    print(f"   - API 服务器: http://localhost:{args.port}/api")
+    print()
+    print("🌐 前端需要单独启动:")
+    print(f"   - 开发模式: cd frontend && npm run dev")
+    print(f"   - 生产模式: cd frontend && npm run build && npm run preview")
+    print()
+    print("按 Ctrl+C 停止服务器\n")
     print("=" * 60)
     print()
 
