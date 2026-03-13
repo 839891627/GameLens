@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.12
 """
 MobileNet 特征提取服务
 独立的 Flask 服务，专门用于 MobileNet 特征提取，轻量高效

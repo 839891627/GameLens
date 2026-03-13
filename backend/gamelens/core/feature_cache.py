@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.12
 """
 帧探·GameLens - 特征缓存模块
 

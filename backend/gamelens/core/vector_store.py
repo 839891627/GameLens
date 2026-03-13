@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.12
 """
 帧探·GameLens - FAISS 向量索引管理模块
 

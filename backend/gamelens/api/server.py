@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.12
 """
 帧探·GameLens - 后端服务器
 提供视频管理和自动解析功能

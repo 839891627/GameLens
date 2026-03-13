@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.12
 """
 帧探·GameLens - 轻量级向量存储（基于感知哈希）
 
