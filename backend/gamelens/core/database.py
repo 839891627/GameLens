@@ -240,6 +240,18 @@ def insert_frame(frame: Dict[str, Any]) -> int:
         return cursor.lastrowid
 
 
+def get_next_frame_id() -> int:
+    """获取下一个可用的 frame_id
+
+    Returns:
+        下一个 frame_id
+    """
+    with get_db() as conn:
+        result = conn.execute("SELECT MAX(id) FROM frames").fetchone()
+        max_id = result[0] if result and result[0] else 0
+        return max_id + 1
+
+
 def insert_frames_batch(frames: List[Dict[str, Any]]) -> int:
     """批量插入帧记录
 

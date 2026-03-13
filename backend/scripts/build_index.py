@@ -12,7 +12,7 @@
     FRAME_INTERVAL - 抽帧间隔(秒)，默认5秒
 
 依赖:
-    pip install faiss-cpu numpy tensorflow yt-dlp opencv-python pillow tqdm python-dotenv
+    pip install -r requirements.txt
 """
 
 import os
@@ -27,15 +27,17 @@ from typing import List, Dict, Any, Optional
 import cv2
 import numpy as np
 import torch
-import clip
+import torchvision.models as models
+from torchvision import transforms
 import yt_dlp
+import faiss
 from tqdm import tqdm
 from dotenv import load_dotenv
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from gamelens.core.database import init_db, insert_video, insert_frames_batch, video_exists
+from gamelens.core.database import init_db, insert_video, insert_frames_batch, video_exists, get_next_frame_id
 from gamelens.core.vector_store import VectorStore, load_or_create_store
 
 # 加载环境变量
@@ -210,19 +212,45 @@ class VideoDownloader:
 # ==================== 帧提取模块 ====================
 
 class FrameExtractor:
-    """视频帧提取器 - 使用OpenCV提取关键帧"""
+    """视频帧提取器 - 使用OpenCV提取关键帧，支持动态采样"""
 
-    def __init__(self, output_dir: Path = VIDEO_FRAMES_DIR):
+    def __init__(self, output_dir: Path = VIDEO_FRAMES_DIR, use_smart_sampling: bool = True):
+        """初始化帧提取器
+
+        Args:
+            output_dir: 帧保存目录
+            use_smart_sampling: 是否启用智能采样（场景变化检测）
+        """
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.use_smart_sampling = use_smart_sampling
+
+    def _detect_scene_change(self, prev_frame: np.ndarray, curr_frame: np.ndarray, threshold: float = 0.3) -> bool:
+        """检测场景变化
+
+        Args:
+            prev_frame: 上一帧
+            curr_frame: 当前帧
+            threshold: 变化阈值（0-1），越大越敏感
+
+        Returns:
+            是否发生场景变化
+        """
+        if prev_frame is None:
+            return True
+
+        # 简单的帧差检测
+        diff = cv2.absdiff(prev_frame, curr_frame)
+        change_ratio = np.sum(diff > 30) / diff.size
+        return change_ratio > threshold
 
     def extract(self, video_info: Dict[str, Any], interval: int = FRAME_INTERVAL) -> List[Dict[str, Any]]:
         """
-        从视频中提取帧
+        从视频中提取帧（支持智能采样）
 
         Args:
             video_info: 视频信息字典
-            interval: 抽帧间隔（秒）
+            interval: 基础抽帧间隔（秒），智能采样时会动态调整
 
         Returns:
             帧信息列表，每帧包含timestamp, seconds, image_path
@@ -234,7 +262,7 @@ class FrameExtractor:
         frame_dir = self.output_dir / bvid
         frame_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"正在提取帧: {video_info['title']}")
+        logger.info(f"正在提取帧: {video_info['title']} (智能采样: {self.use_smart_sampling})")
 
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -248,28 +276,54 @@ class FrameExtractor:
         frames = []
         frame_interval = int(fps * interval)
 
+        # 智能采样参数
+        prev_frame = None
+        min_gap = int(fps * max(1, interval * 0.5))  # 最小间隔
+        max_gap = int(fps * interval * 1.5)  # 最大间隔
+        frames_since_last_save = 0
+
         # 遍历视频帧
         with tqdm(total=duration // interval + 1, desc=f"  提取进度") as pbar:
-            for time_seconds in range(0, duration, interval):
-                # 跳转到指定时间点
-                cap.set(cv2.CAP_PROP_POS_MSEC, time_seconds * 1000)
-
+            for frame_idx in range(0, total_frames, int(fps * 0.5)):  # 每0.5秒检查一次
                 ret, frame = cap.read()
                 if not ret:
                     break
 
-                # 保存帧
-                frame_filename = f"frame_{time_seconds:06d}.jpg"
-                frame_path = frame_dir / frame_filename
-                cv2.imwrite(str(frame_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                time_seconds = int(frame_idx / fps)
 
-                frames.append({
-                    'timestamp': format_timestamp(time_seconds),
-                    'seconds': time_seconds,
-                    'image_path': str(frame_path.relative_to(PROJECT_ROOT))
-                })
+                # 检查是否到达采样点
+                should_save = False
 
-                pbar.update(1)
+                if self.use_smart_sampling:
+                    # 智能采样：检查场景变化
+                    frames_since_last_save += 1
+
+                    if frames_since_last_save >= min_gap:
+                        is_scene_change = self._detect_scene_change(prev_frame, frame)
+
+                        if is_scene_change or frames_since_last_save >= max_gap:
+                            should_save = True
+                            frames_since_last_save = 0
+                else:
+                    # 固定间隔采样
+                    if frame_idx % frame_interval == 0:
+                        should_save = True
+
+                if should_save:
+                    # 保存帧
+                    frame_filename = f"frame_{time_seconds:06d}.jpg"
+                    frame_path = frame_dir / frame_filename
+                    cv2.imwrite(str(frame_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+                    frames.append({
+                        'timestamp': format_timestamp(time_seconds),
+                        'seconds': time_seconds,
+                        'image_path': str(frame_path.relative_to(PROJECT_ROOT))
+                    })
+
+                    pbar.update(1)
+
+                prev_frame = frame.copy()
 
         cap.release()
         logger.info(f"✓ 提取完成: 共{len(frames)}帧")
@@ -280,31 +334,47 @@ class FrameExtractor:
 # ==================== 特征提取模块 ====================
 
 class FeatureExtractor:
-    """图像特征提取器 - 使用CLIP模型提取特征"""
+    """图像特征提取器 - 使用MobileNetV2模型提取特征"""
 
     def __init__(self):
         self.model = None
         self.preprocess = None
         self.device = "cpu"  # 默认使用CPU，有GPU可改为"cuda"
-        logger.info("正在加载CLIP模型...")
+        self.dimension = 1280  # MobileNetV2 特征维度
+        logger.info("正在加载MobileNetV2模型...")
 
     def load_model(self):
-        """加载CLIP模型"""
+        """加载MobileNetV2模型"""
         if self.model is None:
-            # 加载CLIP模型（ViT-B/32，平衡速度和准确度）
-            self.model, self.preprocess = clip.load("ViT-B/32", device=self.device)
-            logger.info("✓ CLIP模型加载完成 (ViT-B/32)")
-            logger.info(f"  特征维度: {self.model.visual.output_dim}")
+            # 加载预训练 MobileNetV2（使用新的 weights API）
+            self.model = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
+            # 移除分类层，只保留特征提取部分
+            self.model.classifier = torch.nn.Identity()
+            self.model.eval()
+
+            # ImageNet 标准预处理
+            self.preprocess = transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225]
+                )
+            ])
+
+            logger.info("✓ MobileNetV2模型加载完成")
+            logger.info(f"  特征维度: {self.dimension}")
 
     def extract(self, image_path: str) -> np.ndarray:
         """
-        提取单张图片的特征向量
+        提取单张图片的特征向量（归一化用于余弦相似度）
 
         Args:
             image_path: 图片路径
 
         Returns:
-            512维特征向量 (CLIP ViT-B/32)
+            1280维特征向量 (MobileNetV2)，已归一化
         """
         if self.model is None:
             self.load_model()
@@ -313,15 +383,20 @@ class FeatureExtractor:
         from PIL import Image
         image = Image.open(image_path)
 
-        # CLIP预处理
+        # MobileNet预处理
         image_input = self.preprocess(image).unsqueeze(0).to(self.device)
 
         # 提取特征
         with torch.no_grad():
-            feature = self.model.encode_image(image_input)
+            feature = self.model(image_input)
 
         # 转换为numpy数组
         feature = feature.cpu().numpy().flatten()
+
+        # L2 归一化（用于余弦相似度）
+        norm = np.linalg.norm(feature)
+        if norm > 0:
+            feature = feature / norm
 
         return feature.astype(np.float32)
 
@@ -358,20 +433,20 @@ class FeatureExtractor:
 # ==================== 索引构建模块 ====================
 
 class IndexBuilder:
-    """索引构建器 - 将视频和帧数据保存到 SQLite + FAISS"""
+    """索引构建器 - 将视频和帧数据保存到 SQLite + FAISS（使用显式 ID 映射）"""
 
     def __init__(self):
         """初始化索引构建器"""
         # 确保数据库已初始化
         init_db()
 
-        # 创建或加载 FAISS 索引
+        # 创建或加载 FAISS 索引（使用 IndexIDMapIP 修复 ID 映射）
         self.vector_store = load_or_create_store()
         logger.info(f"FAISS 索引状态: {self.vector_store.get_vector_count()} 个向量")
 
     def save_video(self, video_info: Dict[str, Any], frames: List[Dict[str, Any]]) -> bool:
         """
-        保存单个视频及其帧到数据库
+        保存单个视频及其帧到数据库（使用显式 frame_id 映射）
 
         Args:
             video_info: 视频信息（bvid, title, author, duration, url）
@@ -390,8 +465,12 @@ class IndexBuilder:
             # 2. 准备帧数据和向量
             frame_records = []
             vectors = []
+            frame_ids = []  # 存储 frame_id 用于 FAISS IDMap
 
             logger.info(f"  开始准备 {len(frames)} 个帧的数据和向量...")
+
+            # 获取起始 frame_id
+            start_frame_id = get_next_frame_id()
 
             for idx, frame in enumerate(frames):
                 frame_records.append({
@@ -403,6 +482,9 @@ class IndexBuilder:
                     'image_path': frame['image_path']
                 })
 
+                frame_id = start_frame_id + idx
+                frame_ids.append(frame_id)
+
                 if 'feature' in frame:
                     vectors.append(frame['feature'])
                 else:
@@ -412,12 +494,20 @@ class IndexBuilder:
 
             # 3. 批量插入帧记录
             insert_frames_batch(frame_records)
-            logger.info(f"  插入 {len(frame_records)} 条帧记录")
+            logger.info(f"  插入 {len(frame_records)} 条帧记录 (frame_id: {start_frame_id} - {start_frame_id + len(frame_records) - 1})")
 
-            # 4. 添加向量到 FAISS
+            # 4. 添加向量到 FAISS（使用显式 ID 映射）
             if vectors:
                 vectors_array = np.array(vectors, dtype='float32')
-                n_added = self.vector_store.add_vectors(vectors_array)
+
+                # 检查索引类型，如果是 IndexIDMap 则需要传入 frame_ids
+                if isinstance(self.vector_store.index, faiss.IndexIDMap):
+                    n_added = self.vector_store.add_vectors(vectors_array, frame_ids)
+                else:
+                    # 兼容旧索引，不使用 IDMap
+                    n_added = self.vector_store.add_vectors(vectors_array)
+                    logger.warning("使用旧索引类型，ID 映射可能不一致")
+
                 logger.info(f"  添加 {n_added} 个向量到 FAISS 索引")
             else:
                 logger.warning(f"  警告: 无特征向量，请检查特征提取是否正常")
@@ -485,8 +575,8 @@ def main():
     # 配置信息
     logger.info(f"配置信息:")
     logger.info(f"  - 抽帧间隔: {FRAME_INTERVAL}秒")
-    logger.info(f"  - 特征模型: CLIP (ViT-B/32)")
-    logger.info(f"  - 特征维度: 512")
+    logger.info(f"  - 特征模型: MobileNetV2")
+    logger.info(f"  - 特征维度: 1280")
     logger.info(f"  - 输出目录: {DATA_DIR}")
     logger.info(f"  - 帧保存目录: {VIDEO_FRAMES_DIR}")
     logger.info(f"  - 数据库: {DATABASE_FILE}")

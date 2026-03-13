@@ -59,6 +59,21 @@ kill_port() {
     fi
 }
 
+# 启动 MobileNet 服务
+start_clip_service() {
+    kill_port 9998 "MobileNet 服务"
+    echo "启动 MobileNet 特征提取服务..."
+    cd backend && $PYTHON_CMD mobilenet_service.py > "$LOG_DIR/clip_service.log" 2>&1 &
+    echo $! > "$LOG_DIR/clip_service.pid"
+    sleep 3
+    if ps -p $(cat "$LOG_DIR/clip_service.pid") > /dev/null; then
+        echo -e "${GREEN}✓ MobileNet 服务已启动 (PID: $(cat $LOG_DIR/clip_service.pid))${NC}"
+        echo "  日志: $LOG_DIR/clip_service.log"
+    else
+        echo -e "${RED}✗ MobileNet 服务启动失败，查看日志: tail $LOG_DIR/clip_service.log${NC}"
+    fi
+}
+
 # 启动后端
 start_backend() {
     kill_port 8080 "后端 API"
@@ -149,6 +164,16 @@ start_frontend_dev() {
 stop_services() {
     echo "停止所有服务..."
 
+    # 停止 MobileNet 服务
+    if [ -f "$LOG_DIR/clip_service.pid" ]; then
+        PID=$(cat "$LOG_DIR/clip_service.pid")
+        if ps -p $PID > /dev/null 2>&1; then
+            kill -9 $PID
+            echo -e "${GREEN}✓ MobileNet 服务已停止 (PID: $PID)${NC}"
+        fi
+        rm -f "$LOG_DIR/clip_service.pid"
+    fi
+
     if [ -f "$LOG_DIR/backend.pid" ]; then
         PID=$(cat "$LOG_DIR/backend.pid")
         if ps -p $PID > /dev/null 2>&1; then
@@ -168,9 +193,15 @@ stop_services() {
     fi
 
     # 再检查一遍端口（开发模式前端在 3000 端口）
+    MOBILENET_PID=$(lsof -ti :9998 2>/dev/null)
     BACKEND_PID=$(lsof -ti :8080 2>/dev/null)
     FRONTEND_PID=$(lsof -ti :8000 2>/dev/null)
     FRONTEND_DEV_PID=$(lsof -ti :3000 2>/dev/null)
+
+    if [ -n "$MOBILENET_PID" ]; then
+        kill -9 $MOBILENET_PID
+        echo -e "${GREEN}✓ MobileNet 端口已释放${NC}"
+    fi
 
     if [ -n "$BACKEND_PID" ]; then
         kill -9 $BACKEND_PID
@@ -192,6 +223,23 @@ stop_services() {
 show_status() {
     echo "服务状态:"
     echo ""
+
+    # MobileNet 服务
+    if [ -f "$LOG_DIR/clip_service.pid" ]; then
+        PID=$(cat "$LOG_DIR/clip_service.pid")
+        if ps -p $PID > /dev/null 2>&1; then
+            echo -e "  MobileNet: ${GREEN}运行中 (PID: $PID)${NC}"
+        else
+            echo -e "  MobileNet: ${RED}已停止${NC}"
+        fi
+    else
+        PID=$(lsof -ti :9998 2>/dev/null)
+        if [ -n "$PID" ]; then
+            echo -e "  MobileNet: ${YELLOW}运行中 (PID: $PID, 未记录)${NC}"
+        else
+            echo -e "  MobileNet: ${RED}未运行${NC}"
+        fi
+    fi
 
     # 后端
     if [ -f "$LOG_DIR/backend.pid" ]; then
@@ -230,14 +278,19 @@ show_help() {
     echo "用法: ./start.sh [命令]"
     echo ""
     echo "命令:"
-    echo "  start, (无参数)  - 启动前后端（生产模式，默认）"
-    echo "  dev              - 启动前后端（开发模式，支持热更新）"
-    echo "  backend          - 仅启动后端"
+    echo "  start, (无参数)  - 启动所有服务（生产模式，默认）"
+    echo "  dev              - 启动所有服务（开发模式，支持热更新）"
+    echo "  backend          - 仅启动后端 + CLIP 服务"
     echo "  frontend         - 仅启动前端（生产模式）"
     echo "  stop             - 停止所有服务"
     echo "  status           - 显示服务状态"
-    echo "  logs             - 查看日志"
+    echo "  logs             - 查看后端日志"
     echo "  rebuild          - 重新构建前端"
+    echo ""
+    echo "服务端口:"
+    echo "  - 前端: 8000 (生产) / 3000 (开发)"
+    echo "  - 后端: 8080"
+    echo "  - MobileNet: 9998"
     echo ""
     echo "环境变量:"
     echo "  PYTHON_CMD        - 指定 Python 解释器路径"
@@ -268,6 +321,8 @@ case "${1:-start}" in
         echo "🎮 帧探·GameLens - 生产模式"
         echo "================================"
         echo ""
+        start_clip_service
+        echo ""
         start_backend
         echo ""
         start_frontend_prod
@@ -275,6 +330,7 @@ case "${1:-start}" in
         echo -e "${GREEN}✓ 启动完成${NC}"
         echo "  - 前端: http://localhost:8000"
         echo "  - 后端: http://localhost:8080/api"
+        echo "  - MobileNet: http://localhost:9998"
         echo ""
         echo "使用 ./start.sh status 查看状态"
         echo "使用 ./start.sh logs 查看日志"
@@ -284,6 +340,8 @@ case "${1:-start}" in
         echo "🎮 帧探·GameLens - 开发模式"
         echo "================================"
         echo ""
+        start_clip_service
+        echo ""
         start_backend
         echo ""
         start_frontend_dev
@@ -291,14 +349,17 @@ case "${1:-start}" in
         echo -e "${GREEN}✓ 启动完成${NC}"
         echo "  - 前端: http://localhost:3000"
         echo "  - 后端: http://localhost:8080/api"
+        echo "  - MobileNet: http://localhost:9998"
         echo ""
         echo "使用 ./start.sh status 查看状态"
         echo "使用 ./start.sh logs 查看日志"
         ;;
     backend)
         echo "================================"
-        echo "🎮 帧探·GameLens - 后端"
+        echo "🎮 帧探·GameLens - 后端 + MobileNet"
         echo "================================"
+        echo ""
+        start_clip_service
         echo ""
         start_backend
         ;;

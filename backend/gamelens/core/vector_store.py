@@ -20,7 +20,9 @@ logger = logging.getLogger(__name__)
 # 从 core/ 目录向上三级到 backend 目录
 INDEX_DIR = Path(__file__).parent.parent.parent / "data"
 INDEX_FILE = INDEX_DIR / "faiss_index.index"
-DIMENSION = 512  # CLIP ViT-B/32 特征维度
+ID_FILE = INDEX_DIR / "frame_ids.npy"  # 存储 frame_id 映射
+DIMENSION = 1280  # MobileNetV2 特征维度
+USE_COSINE_SIMILARITY = True  # 使用余弦相似度
 
 
 # ==================== 异常类 ====================
@@ -45,6 +47,8 @@ class VectorStore:
 
     支持多种索引类型:
     - IndexFlatL2: 精确 L2 距离搜索
+    - IndexFlatIP: 精确内积搜索（余弦相似度，特征需归一化）
+    - IndexIDMapIP: 带显式 ID 映射的内积索引（修复 ID 映射脆弱性）
     - IndexIVFFlat: 倒排索引，适合大规模数据
     - IndexIVFPQ: 乘积量化压缩
     """
@@ -53,19 +57,24 @@ class VectorStore:
         self,
         dimension: int = DIMENSION,
         index_path: Optional[Path] = None,
-        index_type: str = "IndexFlatL2"
+        index_type: str = "IndexIDMapIP",
+        use_cosine: bool = USE_COSINE_SIMILARITY
     ):
         """初始化向量存储
 
         Args:
             dimension: 向量维度
             index_path: 索引文件路径
-            index_type: 索引类型 (IndexFlatL2, IndexIVFFlat, IndexIVFPQ)
+            index_type: 索引类型 (IndexFlatL2, IndexFlatIP, IndexIDMapIP, IndexIVFFlat, IndexIVFPQ)
+            use_cosine: 是否使用余弦相似度（自动归一化特征）
         """
         self.dimension = dimension
         self.index_path = index_path or INDEX_FILE
+        self.id_path = ID_FILE  # frame_id 映射文件
         self.index_type = index_type
+        self.use_cosine = use_cosine
         self.index: Optional[faiss.Index] = None
+        self.frame_ids: List[int] = []  # 存储 frame_id 列表
         self.is_trained = False
 
     def create_index(self, index_type: Optional[str] = None) -> faiss.Index:
@@ -80,10 +89,23 @@ class VectorStore:
         index_type = index_type or self.index_type
 
         if index_type == "IndexFlatL2":
-            # 精确搜索，L2 距离
+            # 精确搜索，L2 距离（兼容旧索引）
             self.index = faiss.IndexFlatL2(self.dimension)
             self.is_trained = True
             logger.info(f"创建 IndexFlatL2 索引，维度: {self.dimension}")
+
+        elif index_type == "IndexFlatIP":
+            # 精确搜索，内积（余弦相似度，特征需归一化）
+            self.index = faiss.IndexFlatIP(self.dimension)
+            self.is_trained = True
+            logger.info(f"创建 IndexFlatIP 索引（余弦相似度），维度: {self.dimension}")
+
+        elif index_type == "IndexIDMapIP":
+            # 使用 IDMap 的内积索引（修复 ID 映射脆弱性）
+            quantizer = faiss.IndexFlatIP(self.dimension)
+            self.index = faiss.IndexIDMap(quantizer)
+            self.is_trained = True
+            logger.info(f"创建 IndexIDMapIP 索引（余弦相似度 + ID映射），维度: {self.dimension}")
 
         elif index_type == "IndexIVFFlat":
             # 倒排索引，需要训练
@@ -121,7 +143,14 @@ class VectorStore:
             self.index = faiss.read_index(str(self.index_path))
             self.is_trained = True
 
-            logger.info(f"加载 FAISS 索引: {self.index.ntotal} 个向量，类型: {type(self.index).__name__}")
+            # 加载 frame_id 映射
+            if self.id_path.exists():
+                self.frame_ids = np.load(self.id_path).tolist()
+                logger.info(f"加载 FAISS 索引: {self.index.ntotal} 个向量, {len(self.frame_ids)} 个 frame_id")
+            else:
+                logger.warning(f"frame_id 映射文件不存在: {self.id_path}，将使用索引位置映射")
+                self.frame_ids = []
+
             return True
 
         except Exception as e:
@@ -140,6 +169,11 @@ class VectorStore:
             # 保存索引
             faiss.write_index(self.index, str(self.index_path))
 
+            # 保存 frame_id 映射
+            if self.frame_ids:
+                np.save(self.id_path, np.array(self.frame_ids))
+                logger.info(f"保存 frame_id 映射: {len(self.frame_ids)} 个")
+
             file_size_mb = self.index_path.stat().st_size / (1024 * 1024)
             logger.info(f"保存 FAISS 索引: {self.index.ntotal} 个向量，文件大小: {file_size_mb:.2f} MB")
 
@@ -147,11 +181,12 @@ class VectorStore:
             logger.error(f"保存索引失败: {e}")
             raise
 
-    def add_vectors(self, vectors: np.ndarray) -> int:
+    def add_vectors(self, vectors: np.ndarray, frame_ids: Optional[List[int]] = None) -> int:
         """添加向量到索引
 
         Args:
             vectors: 向量数组，形状 (n, dimension)
+            frame_ids: 对应的 frame_id 列表，与 vectors 一一对应
 
         Returns:
             添加的向量数量
@@ -168,10 +203,18 @@ class VectorStore:
                 f"向量维度不匹配，期望: {self.dimension}，实际: {vectors.shape[1]}"
             )
 
+        # 归一化特征（余弦相似度）
+        if self.use_cosine:
+            # L2 归一化
+            norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+            norms[norms == 0] = 1  # 避免除零
+            vectors = vectors / norms
+            logger.debug(f"特征已归一化用于余弦相似度")
+
         # 检查是否需要训练（针对 IndexIVF）
         if isinstance(self.index, (faiss.IndexIVF, faiss.IndexIVFPQ)) and not self.is_trained:
             if vectors.shape[0] < 100:
-                logger.warning("训练数据太少 (< 100)，建议使用 IndexFlatL2")
+                logger.warning("训练数据太少 (< 100)，建议使用 IndexFlatIP")
             logger.info(f"训练索引，使用 {vectors.shape[0]} 个向量")
             self.index.train(vectors.astype('float32'))
             self.is_trained = True
@@ -181,7 +224,21 @@ class VectorStore:
             logger.warning("尝试添加空向量数组，跳过")
             return 0
 
-        n_added = self.index.add(vectors.astype('float32'))
+        # 使用 IDMap 添加向量（带显式 ID 映射）
+        if isinstance(self.index, faiss.IndexIDMap):
+            if frame_ids is None:
+                raise ValueError("IndexIDMap 需要提供 frame_ids 参数")
+
+            frame_ids_array = np.array(frame_ids, dtype=np.int64)
+            n_added = self.index.add_with_ids(vectors.astype('float32'), frame_ids_array)
+            self.frame_ids.extend(frame_ids)
+        else:
+            # 普通索引，只添加向量
+            n_added = self.index.add(vectors.astype('float32'))
+            # 如果提供了 frame_ids，记录下来（用于兼容）
+            if frame_ids is not None:
+                self.frame_ids.extend(frame_ids)
+
         logger.info(f"添加 {n_added} 个向量到索引，总数: {self.index.ntotal}")
 
         return n_added
@@ -189,18 +246,21 @@ class VectorStore:
     def search(
         self,
         query_vector: np.ndarray,
-        k: int = 5
+        k: int = 5,
+        min_similarity: float = 0.0
     ) -> Tuple[np.ndarray, np.ndarray]:
         """搜索最相似的 k 个向量
 
         Args:
             query_vector: 查询向量，形状 (dimension,) 或 (n, dimension)
             k: 返回结果数量
+            min_similarity: 最低相似度阈值（余弦相似度），低于此值的结果会被过滤
 
         Returns:
             (distances, indices): 距离数组和索引数组
-                - distances: L2 距离，越小越相似
-                - indices: 向量在索引中的位置（对应 frames.id）
+                - 如果使用余弦相似度：distances 为余弦相似度（越大越相似，范围 -1 到 1）
+                - 如果使用 L2 距离：distances 为 L2 距离（越小越相似）
+                - indices: 如果使用 IndexIDMap，返回实际的 frame_id；否则返回向量在索引中的位置
 
         Raises:
             IndexNotInitialized: 索引未初始化
@@ -221,11 +281,30 @@ class VectorStore:
                 f"查询向量维度不匹配，期望: {self.dimension}，实际: {query_vector.shape[1]}"
             )
 
+        # 归一化查询向量（余弦相似度）
+        if self.use_cosine:
+            norm = np.linalg.norm(query_vector)
+            if norm > 0:
+                query_vector = query_vector / norm
+
         # 调整 k 值（不超过索引总数）
         k = min(k, self.index.ntotal)
 
         # 搜索
         distances, indices = self.index.search(query_vector.astype('float32'), k)
+
+        # 过滤低于阈值的结果
+        if min_similarity > 0:
+            if self.use_cosine:
+                # 余弦相似度：保留 > min_similarity 的结果
+                mask = distances[0] >= min_similarity
+            else:
+                # L2 距离：需要转换为相似度
+                similarities = self.distances_to_similarities(distances[0])
+                mask = similarities >= min_similarity
+
+            distances = distances[0][mask].reshape(1, -1)
+            indices = indices[0][mask].reshape(1, -1)
 
         return distances[0], indices[0]
 
@@ -250,6 +329,9 @@ class VectorStore:
         if self.index_path.exists():
             self.index_path.unlink()
             logger.info(f"索引文件已删除: {self.index_path}")
+        if self.id_path.exists():
+            self.id_path.unlink()
+            logger.info(f"ID 映射文件已删除: {self.id_path}")
 
     def get_index_info(self) -> Dict[str, Any]:
         """获取索引信息"""
@@ -264,39 +346,54 @@ class VectorStore:
         }
 
     def distance_to_similarity(self, distance: float) -> float:
-        """将 L2 距离转换为相似度分数
+        """将距离/内积转换为相似度分数
 
-        对于 CLIP 特征（512维），L2 距离通常在 0-100 范围内。
-        使用归一化方法将距离转换为 0-1 的相似度分数。
+        对于使用余弦相似度的索引（IndexFlatIP, IndexIDMapIP）：
+        - 内积值即为余弦相似度，范围 -1 到 1
+        - 返回归一化后的 0-1 分数
+
+        对于使用 L2 距离的索引（IndexFlatL2）：
+        - L2 距离越小越相似
+        - 使用归一化方法将距离转换为 0-1 的相似度分数
 
         Args:
-            distance: L2 距离
+            distance: FAISS 搜索返回的距离/内积值
 
         Returns:
             相似度分数 (0-1)，1 为完全相同
         """
-        # 对于 512 维 CLIP 特征，典型距离范围是 0-100
-        # 使用线性归一化映射到 0-1
-        min_distance = 0    # 完全相同
-        max_distance = 100  # 最大距离阈值（CLIP特征更紧凑）
+        if self.use_cosine:
+            # 余弦相似度：-1 到 1，映射到 0-1
+            # 余弦相似度 1 = 完全相同，0 = 正交，-1 = 完全相反
+            similarity = (distance + 1) / 2
+            return float(max(0.0, min(1.0, similarity)))
+        else:
+            # L2 距离：越小越相似，映射到 0-1
+            min_distance = 0    # 完全相同
+            max_distance = 100  # 最大距离阈值（CLIP特征更紧凑）
 
-        # 确保在合理范围内
-        distance_clamped = max(min_distance, min(distance, max_distance))
+            # 确保在合理范围内
+            distance_clamped = max(min_distance, min(distance, max_distance))
 
-        # 线性归一化：距离越小，相似度越高
-        similarity = 1 - (distance_clamped - min_distance) / (max_distance - min_distance)
+            # 线性归一化：距离越小，相似度越高
+            similarity = 1 - (distance_clamped - min_distance) / (max_distance - min_distance)
 
-        return float(similarity)
+            return float(similarity)
 
     def distances_to_similarities(self, distances: np.ndarray) -> np.ndarray:
         """批量转换距离为相似度"""
-        min_distance = 0
-        max_distance = 100  # CLIP特征距离范围更小
+        if self.use_cosine:
+            # 余弦相似度：-1 到 1，映射到 0-1
+            return (distances + 1) / 2
+        else:
+            # L2 距离映射
+            min_distance = 0
+            max_distance = 100
 
-        distances_clamped = np.clip(distances, min_distance, max_distance)
-        similarities = 1 - (distances_clamped - min_distance) / (max_distance - min_distance)
+            distances_clamped = np.clip(distances, min_distance, max_distance)
+            similarities = 1 - (distances_clamped - min_distance) / (max_distance - min_distance)
 
-        return similarities
+            return similarities
 
 
 # ==================== 便捷函数 ====================

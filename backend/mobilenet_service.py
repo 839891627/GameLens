@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-CLIP 特征提取服务
-独立的 Flask 服务，专门用于 CLIP 特征提取，避免与其他库冲突
+MobileNet 特征提取服务
+独立的 Flask 服务，专门用于 MobileNet 特征提取，轻量高效
 """
 
 import io
 import base64
 from flask import Flask, request, jsonify
 import torch
-import clip
+import torchvision.models as models
+from torchvision import transforms
 from PIL import Image
 import logging
 
@@ -20,31 +21,49 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# 全局 CLIP 模型
+# 全局 MobileNet 模型
 model = None
 preprocess = None
 device = "cpu"
+DIMENSION = 1280  # MobileNetV2 特征维度
 
 
 def load_model():
-    """加载 CLIP 模型"""
+    """加载 MobileNet 模型"""
     global model, preprocess
     if model is None:
-        logger.info("加载 CLIP 模型...")
-        model, preprocess = clip.load("ViT-B/32", device=device)
-        logger.info("✓ CLIP 模型加载完成")
+        logger.info("加载 MobileNet 模型...")
+        # 加载预训练 MobileNetV2（使用新的 weights API）
+        model = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
+        # 移除分类层，只保留特征提取部分
+        model.classifier = torch.nn.Identity()
+        model.eval()
+
+        # ImageNet 标准预处理
+        preprocess = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )
+        ])
+
+        logger.info("✓ MobileNet 模型加载完成")
+        logger.info(f"  特征维度: {DIMENSION}")
     return model is not None
 
 
 @app.route('/extract', methods=['POST'])
 def extract_feature():
-    """提取图片特征"""
+    """提取图片特征（归一化用于余弦相似度）"""
     try:
         # 确保模型已加载
         if not load_model():
             return jsonify({
                 'success': False,
-                'error': 'CLIP 模型加载失败'
+                'error': 'MobileNet 模型加载失败'
             }), 500
 
         # 获取图片数据
@@ -71,10 +90,15 @@ def extract_feature():
 
         # 提取特征
         with torch.no_grad():
-            feature = model.encode_image(image_input)
+            feature = model(image_input)
 
         # 转换为 numpy 并展平
         feature_np = feature.cpu().numpy().flatten()
+
+        # L2 归一化（用于余弦相似度）
+        norm = __import__('numpy').linalg.norm(feature_np)
+        if norm > 0:
+            feature_np = feature_np / norm
 
         logger.info(f"特征提取成功: {feature_np.shape}")
 
@@ -82,7 +106,8 @@ def extract_feature():
             'success': True,
             'feature': feature_np.tolist(),
             'shape': list(feature_np.shape),
-            'dtype': str(feature_np.dtype)
+            'dtype': str(feature_np.dtype),
+            'normalized': True
         })
 
     except Exception as e:
@@ -98,13 +123,15 @@ def health():
     """健康检查"""
     return jsonify({
         'status': 'ok',
-        'model_loaded': model is not None
+        'model_loaded': model is not None,
+        'model': 'MobileNetV2',
+        'dimension': DIMENSION
     })
 
 
 def main():
     print("=" * 60)
-    print("CLIP 特征提取服务")
+    print("MobileNet 特征提取服务")
     print("=" * 60)
     print("启动服务在 http://localhost:9998")
     print("=" * 60)

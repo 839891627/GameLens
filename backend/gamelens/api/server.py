@@ -13,6 +13,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any
 
+import faiss
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
@@ -24,6 +25,7 @@ from gamelens.core.database import (
     get_total_videos_count, get_total_frames_count, get_stats, db_exists, DB_PATH
 )
 from gamelens.core.vector_store import VectorStore, load_or_create_store, IndexNotInitialized
+from gamelens.core.feature_cache import get_feature_cache, get_cached_feature, cache_feature
 
 # 配置日志（无缓冲，强制刷新）
 logging.basicConfig(
@@ -58,42 +60,6 @@ parse_status = {
     'progress': 0,
     'logs': []
 }
-
-# CLIP 模型全局变量（懒加载 + 线程安全）
-CLIP_MODEL = None
-CLIP_PREPROCESS = None
-CLIP_DEVICE = "cpu"
-CLIP_LOCK = threading.Lock()
-CLIP_LOADED = False
-
-
-def get_clip_model():
-    """获取CLIP模型（线程安全的懒加载）"""
-    global CLIP_MODEL, CLIP_PREPROCESS, CLIP_LOADED
-
-    if CLIP_LOADED:
-        return CLIP_MODEL, CLIP_PREPROCESS
-
-    with CLIP_LOCK:
-        # 双重检查锁定模式
-        if CLIP_LOADED:
-            return CLIP_MODEL, CLIP_PREPROCESS
-
-        logger.info("加载 CLIP 模型...")
-        try:
-            CLIP_MODEL, CLIP_PREPROCESS = clip.load("ViT-B/32", device=CLIP_DEVICE)
-            CLIP_LOADED = True
-            logger.info("✓ CLIP 模型加载完成")
-            return CLIP_MODEL, CLIP_PREPROCESS
-        except Exception as e:
-            logger.error(f"CLIP 模型加载失败: {e}", exc_info=True)
-            return None, None
-
-
-def load_clip_model():
-    """预加载 CLIP 模型（服务器启动时调用）"""
-    model, _ = get_clip_model()
-    return model is not None
 
 
 # ==================== 工具函数 ====================
@@ -685,7 +651,7 @@ def get_parse_logs_api():
 
 @app.route('/api/match', methods=['POST'])
 def match_image_api():
-    """服务端图片匹配接口 - CLIP + FAISS + SQLite 版本"""
+    """服务端图片匹配接口 - CLIP + FAISS + SQLite + Re-ranking 版本"""
     import base64
     import io
     import numpy as np
@@ -696,6 +662,7 @@ def match_image_api():
         data = request.json
         image_data = data.get('image', '')
         max_results = data.get('max_results', 5)
+        min_similarity = data.get('min_similarity', 0.5)  # 默认最低相似度 0.5
 
         logger.info(f"收到匹配请求，图片数据长度: {len(image_data) if image_data else 0}")
 
@@ -747,74 +714,98 @@ def match_image_api():
                 'error': f'图片解码失败: {str(e)}'
             }), 400
 
-        # 调用独立的 CLIP 服务提取特征（避免库冲突）
-        logger.info("调用 CLIP 服务提取特征...")
-        sys.stdout.flush()
-
-        try:
-            import requests
-
-            # 调用 CLIP 服务
-            clip_service_url = "http://127.0.0.1:9998/extract"
-            response = requests.post(
-                clip_service_url,
-                json={'image': image_data},
-                timeout=30
-            )
-
-            if response.status_code != 200:
-                logger.error(f"CLIP 服务返回错误: {response.status_code}")
-                return jsonify({
-                    'success': False,
-                    'error': f'CLIP 服务错误: HTTP {response.status_code}'
-                }), 500
-
-            result = response.json()
-            if not result.get('success'):
-                logger.error(f"CLIP 服务提取失败: {result.get('error')}")
-                return jsonify({
-                    'success': False,
-                    'error': f"CLIP 服务提取失败: {result.get('error')}"
-                }), 500
-
-            # 提取特征向量
-            query_feature = np.array(result['feature'], dtype=np.float32)
-            logger.info(f"CLIP 特征提取完成: {query_feature.shape}")
+        # 检查特征缓存
+        query_feature = get_cached_feature(image_bytes)
+        if query_feature is not None:
+            logger.info("命中特征缓存")
+        else:
+            # 缓存未命中，调用 MobileNet 服务提取特征
+            logger.info("调用 MobileNet 服务提取特征...")
             sys.stdout.flush()
 
-        except requests.exceptions.ConnectionError:
-            logger.error("无法连接到 CLIP 服务")
-            return jsonify({
-                'success': False,
-                'error': 'CLIP 服务未运行，请先启动: python clip_service.py'
-            }), 500
-        except requests.exceptions.Timeout:
-            logger.error("CLIP 服务请求超时")
-            return jsonify({
-                'success': False,
-                'error': 'CLIP 服务请求超时'
-            }), 500
-        except Exception as e:
-            logger.error(f"CLIP 服务调用异常: {e}", exc_info=True)
-            sys.stdout.flush()
-            return jsonify({
-                'success': False,
-                'error': f'CLIP 服务调用异常: {str(e)}'
-            }), 500
+            try:
+                import requests
 
-        # FAISS 向量搜索
-        distances, frame_ids = vector_store.search(query_feature, k=max_results)
+                # 调用 MobileNet 服务
+                mobilenet_service_url = "http://127.0.0.1:9998/extract"
+                response = requests.post(
+                    mobilenet_service_url,
+                    json={'image': image_data},
+                    timeout=30
+                )
+
+                if response.status_code != 200:
+                    logger.error(f"MobileNet 服务返回错误: {response.status_code}")
+                    return jsonify({
+                        'success': False,
+                        'error': f'MobileNet 服务错误: HTTP {response.status_code}'
+                    }), 500
+
+                result = response.json()
+                if not result.get('success'):
+                    logger.error(f"MobileNet 服务提取失败: {result.get('error')}")
+                    return jsonify({
+                        'success': False,
+                        'error': f"MobileNet 服务提取失败: {result.get('error')}"
+                    }), 500
+
+                # 提取特征向量
+                query_feature = np.array(result['feature'], dtype=np.float32)
+
+                # 归一化特征（用于余弦相似度）
+                norm = np.linalg.norm(query_feature)
+                if norm > 0:
+                    query_feature = query_feature / norm
+
+                # 存入缓存
+                cache_feature(image_bytes, query_feature)
+
+                logger.info(f"MobileNet 特征提取完成: {query_feature.shape}")
+                sys.stdout.flush()
+
+            except requests.exceptions.ConnectionError:
+                logger.error("无法连接到 MobileNet 服务")
+                return jsonify({
+                    'success': False,
+                    'error': 'MobileNet 服务未运行，请先启动: python mobilenet_service.py'
+                }), 500
+            except requests.exceptions.Timeout:
+                logger.error("MobileNet 服务请求超时")
+                return jsonify({
+                    'success': False,
+                    'error': 'MobileNet 服务请求超时'
+                }), 500
+            except Exception as e:
+                logger.error(f"MobileNet 服务调用异常: {e}", exc_info=True)
+                sys.stdout.flush()
+                return jsonify({
+                    'success': False,
+                    'error': f'MobileNet 服务调用异常: {str(e)}'
+                }), 500
+
+        # ==================== Re-ranking 机制 ====================
+        # 第一阶段：FAISS 粗选（获取更多候选结果）
+        rerank_candidate_count = min(max(20, max_results * 4), vector_store.get_vector_count())
+        distances, frame_ids = vector_store.search(
+            query_feature,
+            k=rerank_candidate_count,
+            min_similarity=0.0  # 第一阶段不过滤
+        )
 
         # SQLite 查询元数据
-        results = []
+        candidates = []
         with get_db() as conn:
             for faiss_idx, distance in zip(frame_ids, distances):
                 if faiss_idx < 0:  # FAISS 返回 -1 表示无效结果
                     continue
 
-                # ⚠️ 重要：FAISS 索引位置从 0 开始，数据库 ID 从 1 开始
-                # 数据库 ID = FAISS 索引位置 + 1
-                db_frame_id = int(faiss_idx) + 1
+                # 判断返回的是索引位置还是 frame_id
+                if isinstance(vector_store.index, faiss.IndexIDMap):
+                    # IndexIDMap 直接返回 frame_id
+                    db_frame_id = int(faiss_idx)
+                else:
+                    # 旧索引：需要转换（索引位置 + 1）
+                    db_frame_id = int(faiss_idx) + 1
 
                 # 查询帧信息
                 frame = conn.execute(
@@ -826,8 +817,13 @@ def match_image_api():
                 ).fetchone()
 
                 if frame:
-                    # 计算相似度（L2 距离转换为相似度）
-                    similarity = vector_store.distance_to_similarity(float(distance))
+                    # 计算相似度
+                    if vector_store.use_cosine:
+                        # 余弦相似度：直接使用 distance（已经是余弦相似度）
+                        similarity = vector_store.distance_to_similarity(float(distance))
+                    else:
+                        # L2 距离转换
+                        similarity = vector_store.distance_to_similarity(float(distance))
 
                     # 处理图片路径
                     image_path = frame['image_path']
@@ -835,34 +831,46 @@ def match_image_api():
                         relative_path = image_path.replace('data/video_frames/', '')
                         image_path = f"/frames/{relative_path}"
 
-                    # 返回嵌套格式，与前端期望的格式匹配
-                    results.append({
+                    candidates.append({
                         'bvid': frame['video_bvid'],
                         'similarity': similarity,
+                        'cosine_similarity': float(distance) if vector_store.use_cosine else None,
                         'frame': {
                             'seconds': frame['seconds'],
                             'image_path': image_path
-                        }
+                        },
+                        'frame_id': db_frame_id
                     })
                 else:
-                    # 如果查询不到帧，说明索引和数据库不同步
-                    logger.warning(f"FAISS 索引位置 {faiss_idx} (DB ID {db_frame_id}) 在数据库中不存在，索引可能已损坏")
+                    logger.warning(f"FAISS 结果 {faiss_idx} (DB ID {db_frame_id}) 在数据库中不存在")
 
-        # 如果所有结果都查询失败，返回错误
-        if not results:
-            logger.error(f"所有匹配结果都查询失败，索引和数据库不同步")
+        # 如果没有候选结果
+        if not candidates:
+            logger.error("所有匹配结果都查询失败，索引和数据库不同步")
             return jsonify({
                 'success': False,
                 'error': '索引和数据库不同步，请删除 data/faiss_index.index 和 data/video_frames.db 后重新解析视频',
                 'requires_rebuild': True
             }), 500
 
-        logger.info(f"匹配完成，返回 {len(results)} 个结果")
+        # 第二阶段：按相似度排序并应用阈值
+        candidates.sort(key=lambda x: x['similarity'], reverse=True)
+
+        # 应用相似度阈值过滤
+        filtered_candidates = [c for c in candidates if c['similarity'] >= min_similarity]
+
+        # 取前 N 个结果
+        results = filtered_candidates[:max_results]
+
+        logger.info(f"匹配完成: 粗选 {len(candidates)} 个 -> 过滤后 {len(filtered_candidates)} 个 -> 返回 {len(results)} 个")
 
         return jsonify({
             'success': True,
             'data': {
-                'matches': results
+                'matches': results,
+                'candidates_count': len(candidates),
+                'filtered_count': len(filtered_candidates),
+                'threshold': min_similarity
             }
         })
 
