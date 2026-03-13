@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # 从 core/ 目录向上三级到 backend 目录
 INDEX_DIR = Path(__file__).parent.parent.parent / "data"
 INDEX_FILE = INDEX_DIR / "faiss_index.index"
-DIMENSION = 1280  # MobileNetV2 特征维度
+DIMENSION = 512  # CLIP ViT-B/32 特征维度
 
 
 # ==================== 异常类 ====================
@@ -266,7 +266,7 @@ class VectorStore:
     def distance_to_similarity(self, distance: float) -> float:
         """将 L2 距离转换为相似度分数
 
-        对于高维向量（1280维），L2 距离通常在 0-450 范围内。
+        对于 CLIP 特征（512维），L2 距离通常在 0-100 范围内。
         使用归一化方法将距离转换为 0-1 的相似度分数。
 
         Args:
@@ -275,10 +275,10 @@ class VectorStore:
         Returns:
             相似度分数 (0-1)，1 为完全相同
         """
-        # 对于 1280 维 MobileNetV2 特征，典型距离范围是 0-450
+        # 对于 512 维 CLIP 特征，典型距离范围是 0-100
         # 使用线性归一化映射到 0-1
         min_distance = 0    # 完全相同
-        max_distance = 450  # 最大距离阈值
+        max_distance = 100  # 最大距离阈值（CLIP特征更紧凑）
 
         # 确保在合理范围内
         distance_clamped = max(min_distance, min(distance, max_distance))
@@ -291,7 +291,7 @@ class VectorStore:
     def distances_to_similarities(self, distances: np.ndarray) -> np.ndarray:
         """批量转换距离为相似度"""
         min_distance = 0
-        max_distance = 450
+        max_distance = 100  # CLIP特征距离范围更小
 
         distances_clamped = np.clip(distances, min_distance, max_distance)
         similarities = 1 - (distances_clamped - min_distance) / (max_distance - min_distance)

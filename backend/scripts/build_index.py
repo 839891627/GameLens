@@ -26,7 +26,8 @@ from typing import List, Dict, Any, Optional
 
 import cv2
 import numpy as np
-import tensorflow as tf
+import torch
+import clip
 import yt_dlp
 from tqdm import tqdm
 from dotenv import load_dotenv
@@ -279,22 +280,21 @@ class FrameExtractor:
 # ==================== 特征提取模块 ====================
 
 class FeatureExtractor:
-    """图像特征提取器 - 使用MobileNetV2提取特征"""
+    """图像特征提取器 - 使用CLIP模型提取特征"""
 
     def __init__(self):
         self.model = None
-        logger.info("正在加载MobileNetV2模型...")
+        self.preprocess = None
+        self.device = "cpu"  # 默认使用CPU，有GPU可改为"cuda"
+        logger.info("正在加载CLIP模型...")
 
     def load_model(self):
-        """加载TensorFlow MobileNetV2模型"""
+        """加载CLIP模型"""
         if self.model is None:
-            # 使用MobileNetV2作为特征提取器
-            self.model = tf.keras.applications.MobileNetV2(
-                include_top=False,  # 不包含分类层
-                pooling='avg',      # 全局平均池化
-                weights='imagenet'  # 使用预训练权重
-            )
-            logger.info("✓ MobileNetV2模型加载完成")
+            # 加载CLIP模型（ViT-B/32，平衡速度和准确度）
+            self.model, self.preprocess = clip.load("ViT-B/32", device=self.device)
+            logger.info("✓ CLIP模型加载完成 (ViT-B/32)")
+            logger.info(f"  特征维度: {self.model.visual.output_dim}")
 
     def extract(self, image_path: str) -> np.ndarray:
         """
@@ -304,24 +304,24 @@ class FeatureExtractor:
             image_path: 图片路径
 
         Returns:
-            1280维特征向量 (Float32Array)
+            512维特征向量 (CLIP ViT-B/32)
         """
         if self.model is None:
             self.load_model()
 
         # 加载并预处理图片
-        img = tf.keras.preprocessing.image.load_img(
-            image_path,
-            target_size=(224, 224)
-        )
-        img_array = tf.keras.preprocessing.image.img_to_array(img)
+        from PIL import Image
+        image = Image.open(image_path)
 
-        # 预处理（MobileNetV2的预处理方式）
-        img_array = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
-        img_array = np.expand_dims(img_array, axis=0)
+        # CLIP预处理
+        image_input = self.preprocess(image).unsqueeze(0).to(self.device)
 
         # 提取特征
-        feature = self.model.predict(img_array, verbose=0)[0]
+        with torch.no_grad():
+            feature = self.model.encode_image(image_input)
+
+        # 转换为numpy数组
+        feature = feature.cpu().numpy().flatten()
 
         return feature.astype(np.float32)
 
@@ -485,7 +485,8 @@ def main():
     # 配置信息
     logger.info(f"配置信息:")
     logger.info(f"  - 抽帧间隔: {FRAME_INTERVAL}秒")
-    logger.info(f"  - 特征维度: 1280 (MobileNetV2)")
+    logger.info(f"  - 特征模型: CLIP (ViT-B/32)")
+    logger.info(f"  - 特征维度: 512")
     logger.info(f"  - 输出目录: {DATA_DIR}")
     logger.info(f"  - 帧保存目录: {VIDEO_FRAMES_DIR}")
     logger.info(f"  - 数据库: {DATABASE_FILE}")

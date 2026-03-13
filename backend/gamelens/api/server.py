@@ -25,12 +25,17 @@ from gamelens.core.database import (
 )
 from gamelens.core.vector_store import VectorStore, load_or_create_store, IndexNotInitialized
 
-# 配置日志
+# 配置日志（无缓冲，强制刷新）
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    force=True
 )
 logger = logging.getLogger(__name__)
+
+# 确保日志处理器无缓冲
+for handler in logger.handlers:
+    handler.flush = lambda: handler.stream.flush()
 
 # ==================== 配置 ====================
 # 项目根目录（从 api/ 向上三级到 backend 目录）
@@ -53,6 +58,42 @@ parse_status = {
     'progress': 0,
     'logs': []
 }
+
+# CLIP 模型全局变量（懒加载 + 线程安全）
+CLIP_MODEL = None
+CLIP_PREPROCESS = None
+CLIP_DEVICE = "cpu"
+CLIP_LOCK = threading.Lock()
+CLIP_LOADED = False
+
+
+def get_clip_model():
+    """获取CLIP模型（线程安全的懒加载）"""
+    global CLIP_MODEL, CLIP_PREPROCESS, CLIP_LOADED
+
+    if CLIP_LOADED:
+        return CLIP_MODEL, CLIP_PREPROCESS
+
+    with CLIP_LOCK:
+        # 双重检查锁定模式
+        if CLIP_LOADED:
+            return CLIP_MODEL, CLIP_PREPROCESS
+
+        logger.info("加载 CLIP 模型...")
+        try:
+            CLIP_MODEL, CLIP_PREPROCESS = clip.load("ViT-B/32", device=CLIP_DEVICE)
+            CLIP_LOADED = True
+            logger.info("✓ CLIP 模型加载完成")
+            return CLIP_MODEL, CLIP_PREPROCESS
+        except Exception as e:
+            logger.error(f"CLIP 模型加载失败: {e}", exc_info=True)
+            return None, None
+
+
+def load_clip_model():
+    """预加载 CLIP 模型（服务器启动时调用）"""
+    model, _ = get_clip_model()
+    return model is not None
 
 
 # ==================== 工具函数 ====================
@@ -644,12 +685,12 @@ def get_parse_logs_api():
 
 @app.route('/api/match', methods=['POST'])
 def match_image_api():
-    """服务端图片匹配接口 - FAISS + SQLite 版本"""
+    """服务端图片匹配接口 - CLIP + FAISS + SQLite 版本"""
     import base64
     import io
     import numpy as np
-    from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
-    from tensorflow.keras.preprocessing import image as keras_image
+    import multiprocessing as mp
+    from PIL import Image
 
     try:
         data = request.json
@@ -698,22 +739,7 @@ def match_image_api():
 
             image_bytes = base64.b64decode(image_data)
             logger.info(f"Base64 解码成功，图片大小: {len(image_bytes)} bytes")
-
-            # 使用与索引构建时完全相同的方式处理图片
-            from tensorflow.keras.preprocessing import image as keras_image
-
-            image = keras_image.img_to_array(
-                keras_image.load_img(io.BytesIO(image_bytes), target_size=(224, 224))
-            )
-
-            # 预处理（MobileNetV2 的预处理方式）
-            img_array = preprocess_input(image)
-
-            # 添加批次维度
-            img_array = np.expand_dims(img_array, axis=0)
-
-            logger.info(f"图片预处理完成，数组形状: {img_array.shape}")
-
+            sys.stdout.flush()
         except Exception as e:
             logger.error(f"图片解码失败: {e}", exc_info=True)
             return jsonify({
@@ -721,21 +747,60 @@ def match_image_api():
                 'error': f'图片解码失败: {str(e)}'
             }), 400
 
-        # 加载 MobileNet V2 模型（缓存以提升性能）
-        if not hasattr(match_image_api, 'model'):
-            logger.info("加载 MobileNetV2 模型...")
-            from tensorflow.keras.applications import MobileNetV2
-            match_image_api.model = MobileNetV2(
-                weights='imagenet',
-                include_top=False,
-                pooling='avg',
-                input_shape=(224, 224, 3)
-            )
-            logger.info("MobileNetV2 模型加载完成")
+        # 调用独立的 CLIP 服务提取特征（避免库冲突）
+        logger.info("调用 CLIP 服务提取特征...")
+        sys.stdout.flush()
 
-        # 提取查询图片特征
-        query_feature = match_image_api.model.predict(img_array, verbose=0)
-        query_feature = query_feature.flatten()
+        try:
+            import requests
+
+            # 调用 CLIP 服务
+            clip_service_url = "http://127.0.0.1:9998/extract"
+            response = requests.post(
+                clip_service_url,
+                json={'image': image_data},
+                timeout=30
+            )
+
+            if response.status_code != 200:
+                logger.error(f"CLIP 服务返回错误: {response.status_code}")
+                return jsonify({
+                    'success': False,
+                    'error': f'CLIP 服务错误: HTTP {response.status_code}'
+                }), 500
+
+            result = response.json()
+            if not result.get('success'):
+                logger.error(f"CLIP 服务提取失败: {result.get('error')}")
+                return jsonify({
+                    'success': False,
+                    'error': f"CLIP 服务提取失败: {result.get('error')}"
+                }), 500
+
+            # 提取特征向量
+            query_feature = np.array(result['feature'], dtype=np.float32)
+            logger.info(f"CLIP 特征提取完成: {query_feature.shape}")
+            sys.stdout.flush()
+
+        except requests.exceptions.ConnectionError:
+            logger.error("无法连接到 CLIP 服务")
+            return jsonify({
+                'success': False,
+                'error': 'CLIP 服务未运行，请先启动: python clip_service.py'
+            }), 500
+        except requests.exceptions.Timeout:
+            logger.error("CLIP 服务请求超时")
+            return jsonify({
+                'success': False,
+                'error': 'CLIP 服务请求超时'
+            }), 500
+        except Exception as e:
+            logger.error(f"CLIP 服务调用异常: {e}", exc_info=True)
+            sys.stdout.flush()
+            return jsonify({
+                'success': False,
+                'error': f'CLIP 服务调用异常: {str(e)}'
+            }), 500
 
         # FAISS 向量搜索
         distances, frame_ids = vector_store.search(query_feature, k=max_results)
